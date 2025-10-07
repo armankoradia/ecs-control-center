@@ -339,14 +339,6 @@ docker-compose logs -f frontend
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **AWS**: For providing excellent cloud services
-- **FastAPI**: For the amazing Python web framework
-- **React**: For the powerful frontend library
-- **Tailwind CSS**: For the utility-first CSS framework
-- **Docker**: For containerization technology
-
 ## 📞 Support
 
 For support, email ask.arman990@gmail.com or create an issue in the repository.
