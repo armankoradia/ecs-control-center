@@ -1,14 +1,17 @@
 import React, { useEffect, useState, useCallback } from "react";
 import apiService from "../services/apiService";
 import DeploymentStatusCard from "./DeploymentStatusCard";
+import TaskDefinitionEditor from "./TaskDefinitionEditor";
 
-function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, authMethod }) {
+function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
   const [details, setDetails] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [openRows, setOpenRows] = useState({});
   const [deploying, setDeploying] = useState(false);
   const [deployMsg, setDeployMsg] = useState("");
   const [deploymentData, setDeploymentData] = useState(null);
+  const [editingTaskDefinition, setEditingTaskDefinition] = useState(false);
+  const [updatingTaskDefinition, setUpdatingTaskDefinition] = useState(false);
 
   const fetchTaskDetails = useCallback(async (forceRefresh = false) => {
     if (!cluster || !service) { 
@@ -18,7 +21,7 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
     
     setLoadingDetails(true);
     try {
-      const data = await apiService.getTaskDetails(cluster, service, profile, region, authMethod, forceRefresh);
+      const data = await apiService.getTaskDetails(cluster, service, region, forceRefresh);
       setDetails(data || []);
     } catch (err) {
       console.error("Failed to fetch task details:", err);
@@ -26,7 +29,7 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
     } finally {
       setLoadingDetails(false);
     }
-  }, [cluster, service, profile, region, authMethod]);
+  }, [cluster, service, region]);
 
   useEffect(() => {
     fetchTaskDetails();
@@ -42,7 +45,7 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
     setDeployMsg("");
     setDeploymentData(null);
     try {
-      const result = await apiService.deploy(cluster, service, containerName, profile, region, authMethod);
+      const result = await apiService.deploy(cluster, service, containerName, region);
       if (result && !result.error) {
         setDeploymentData(result);
         setDeployMsg("Deployment started successfully");
@@ -53,24 +56,83 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
       setDeployMsg("Deployment failed: " + (err?.response?.data?.detail || err.message));
     }
     setDeploying(false);
-  }, [cluster, service, profile, region, authMethod]);
+  }, [cluster, service, region]);
+
+  const handleEditTaskDefinition = useCallback(() => {
+    setEditingTaskDefinition(true);
+  }, []);
+
+  const handleTaskDefinitionUpdate = useCallback((result) => {
+    setUpdatingTaskDefinition(false);
+    
+    // Show deployment status when task definition update is successful
+    if (result && !result.error) {
+      setDeploymentData(result);
+      setDeployMsg("Task definition updated and deployment started successfully");
+    } else {
+      setDeployMsg("Task definition update failed: " + (result?.error || "Unknown error"));
+    }
+    
+    // Refresh task details after deployment
+    setTimeout(() => {
+      fetchTaskDetails(true);
+    }, 2000);
+  }, [fetchTaskDetails]);
 
   return (
-    <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow p-4 h-[500px] overflow-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-bold text-gray-800 dark:text-gray-200">Task Details</h2>
-        {details.length > 0 && (
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {details.length} task{details.length !== 1 ? 's' : ''}
-          </div>
-        )}
+    <div className="card h-[500px] flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-secondary-200">
+        <div>
+          <h2 className="text-xl font-bold text-secondary-900 flex items-center">
+            <svg className="w-5 h-5 mr-2 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Task Details
+          </h2>
+          {details.length > 0 && (
+            <p className="text-sm text-secondary-500 mt-1">
+              {details.length} task{details.length !== 1 ? 's' : ''} found
+            </p>
+          )}
+        </div>
+        <div className="flex items-center space-x-3">
+          {service && (
+            <button
+              onClick={handleEditTaskDefinition}
+              className="btn-primary text-sm py-2 px-4 flex items-center space-x-2"
+              title="Edit Task Definition (CPU, Memory, Environment Variables, Secrets)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span>Edit Task Definition</span>
+            </button>
+          )}
+        </div>
       </div>
       
+      <div className="flex-1 overflow-y-auto scrollbar-thin pr-2 -mr-2">
+      
       {deploying && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="mb-4 p-4 bg-info-50 border border-info-200 rounded-lg">
           <div className="flex items-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-            <span className="text-sm text-blue-600 dark:text-blue-400">Initiating deployment…</span>
+            <svg className="animate-spin h-5 w-5 text-info-600 mr-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm font-medium text-info-800">Initiating deployment…</span>
+          </div>
+        </div>
+      )}
+      
+      {updatingTaskDefinition && (
+        <div className="mb-4 p-4 bg-primary-50 border border-primary-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="animate-spin h-5 w-5 text-primary-600 mr-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm font-medium text-primary-800">Updating task definition and deploying…</span>
           </div>
         </div>
       )}
@@ -80,9 +142,7 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
           deploymentData={deploymentData}
           cluster={cluster}
           service={service}
-          profile={profile}
           region={region}
-          authMethod={authMethod}
           onClose={() => {
             setDeploymentData(null);
             setDeployMsg("");
@@ -91,30 +151,45 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
       )}
       
       {deployMsg && !deploymentData && (
-        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <div className="text-sm text-red-600 dark:text-red-400">{deployMsg}</div>
+        <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-lg">
+          <div className="flex items-start">
+            <svg className="w-5 h-5 text-danger-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="text-sm font-medium text-danger-800">{deployMsg}</div>
+          </div>
         </div>
       )}
       
       {loading && (
-        <div className="flex items-center justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 dark:border-gray-400"></div>
-          <span className="ml-2 text-gray-500 dark:text-gray-400">Loading tasks...</span>
+        <div className="flex flex-col items-center justify-center py-12">
+          <svg className="animate-spin h-10 w-10 text-primary-600 mb-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span className="text-sm font-medium text-secondary-600">Loading tasks...</span>
         </div>
       )}
       
       {!loading && tasks.length === 0 && details.length === 0 && (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          <div className="text-4xl mb-2">📋</div>
-          <div>No tasks found</div>
+        <div className="text-center py-12">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-100 flex items-center justify-center">
+            <svg className="w-8 h-8 text-secondary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <p className="text-base font-medium text-secondary-700">No tasks found</p>
+          <p className="text-sm text-secondary-500 mt-1">Tasks will appear here when available</p>
         </div>
       )}
       
       {!loading && details.length > 0 && details[0]?.status === 'STOPPED' && (
-        <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+        <div className="mb-4 p-4 bg-warning-50 border border-warning-200 rounded-lg">
           <div className="flex items-center">
-            <div className="text-orange-600 dark:text-orange-400 mr-2">⚠️</div>
-            <span className="text-sm text-orange-600 dark:text-orange-400">
+            <svg className="w-5 h-5 text-warning-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-sm font-medium text-warning-800">
               No running tasks found. Showing last stopped tasks.
             </span>
           </div>
@@ -134,73 +209,77 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
             
 
             return (
-              <div key={d.task_arn} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+              <div key={d.task_arn} className="bg-white rounded-xl border border-secondary-200 shadow-soft hover:shadow-medium transition-all duration-200 overflow-hidden">
                 {/* Task Header */}
-                <div className="p-4 border-b border-gray-200 dark:border-gray-600">
+                <div className="p-5 border-b border-secondary-200 bg-gradient-to-r from-secondary-50 to-white">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                        <span className="text-gray-500 dark:text-gray-400">Task ID:</span> {d.task_id}
+                      <div className="text-sm font-semibold text-secondary-900">
+                        <span className="text-secondary-600 font-normal">Task ID:</span> {d.task_id}
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      <span className={`badge ${
                         d.status === 'RUNNING' 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' 
-                          : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+                          ? 'badge-success' 
+                          : 'badge-danger'
                       }`}>
                         {d.status || 'UNKNOWN'}
                       </span>
                     </div>
                     <button
                       onClick={() => toggleRow(d.task_arn)}
-                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                      className="p-2 text-secondary-500 hover:text-secondary-700 hover:bg-secondary-100 rounded-lg transition-all duration-200"
                     >
                       {isOpen ? '▼' : '▶'}
                     </button>
                   </div>
                   
                   {/* Quick Info Row */}
-                  <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">CPU:</span>
-                      <span className="ml-1 font-medium">{d.cpu || '-'}</span>
+                      <span className="text-secondary-600 text-xs">CPU:</span>
+                      <span className="ml-2 font-semibold text-secondary-900">{d.cpu || '-'}</span>
                     </div>
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">Memory:</span>
-                      <span className="ml-1 font-medium">{d.memory || '-'}</span>
+                      <span className="text-secondary-600 text-xs">Memory:</span>
+                      <span className="ml-2 font-semibold text-secondary-900">{d.memory || '-'}</span>
                     </div>
                     <div className="md:col-span-2">
-                      <span className="text-gray-500 dark:text-gray-400">Task Def:</span>
-                      <span className="ml-1 font-mono text-xs">{d.task_definition || '-'}</span>
+                      <span className="text-secondary-600 text-xs">Task Def:</span>
+                      <span className="ml-2 text-xs font-semibold text-secondary-900">{d.task_definition || '-'}</span>
                     </div>
                   </div>
                   
                   {/* Image Info */}
                   {firstImageUri && (
-                    <div className="mt-3">
-                      <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Image URI:</div>
-                      <div className="text-sm text-gray-900 dark:text-gray-100 break-all font-mono">
+                    <div className="mt-4">
+                      <div className="text-sm font-semibold text-secondary-700 mb-2">Image URI:</div>
+                      <div className="text-sm text-secondary-900 break-all bg-secondary-50 p-2 rounded border border-secondary-200">
                         {firstImageUri}
                       </div>
                       {firstImageTag && (
                         <div className="mt-2 flex items-center space-x-2">
-                          <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 text-xs font-medium">
+                          <span className="badge-info text-xs font-medium">
                             Latest: {firstImageTag}
                           </span>
                           {!firstIsLatest && (
                             <button
-                              className="px-3 py-1 rounded bg-green-600 text-white text-xs font-medium hover:bg-green-700 transition-colors"
+                              className={`text-xs font-medium transition-all duration-200 ${
+                                d.service_uses_latest_tag 
+                                  ? "btn-primary" 
+                                  : "btn-success"
+                              }`}
                               onClick={() => handleDeploy(firstImageUri, firstImageTag, firstContainerName)}
                             >
-                              Deploy
+                              {d.service_uses_latest_tag ? "Restart" : "Deploy"}
                             </button>
                           )}
                           {firstIsLatest && (
-                            <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300 text-xs font-medium">
+                            <span className="badge-secondary text-xs font-medium">
                               Up to date
                             </span>
                           )}
                           {extraCount > 0 && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-xs text-secondary-500">
                               +{extraCount} more
                             </span>
                           )}
@@ -212,18 +291,18 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
                 
                 {/* Expanded Details */}
                 {isOpen && (
-                  <div className="p-4 bg-white dark:bg-gray-800">
+                  <div className="p-5 bg-secondary-50 border-t border-secondary-200">
                     <div className="space-y-4">
                       {/* Task ARN */}
                       <div>
-                        <div className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Task ARN</div>
+                        <div className="text-sm font-bold text-secondary-700 mb-2">Task ARN</div>
                         <div className="flex items-center gap-2">
-                          <div className="font-mono text-sm break-all text-gray-900 dark:text-gray-100 flex-1">
+                          <div className="text-sm break-all text-secondary-900 flex-1 bg-white p-3 rounded-lg border border-secondary-200">
                             {d.task_arn}
                           </div>
                           <button
                             onClick={() => copy(d.task_arn)}
-                            className="px-3 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 text-sm transition-colors"
+                            className="btn-secondary text-sm px-4 py-2"
                           >
                             Copy
                           </button>
@@ -233,23 +312,23 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
                       {/* Error Information */}
                       {(d.stopped_reason || d.container_reason || (d.exit_code !== null && d.exit_code !== undefined)) && (
                         <div className="space-y-3">
-                          <div className="text-sm font-bold text-gray-700 dark:text-gray-300">Error Details</div>
+                          <div className="text-sm font-bold text-gray-700">Error Details</div>
                           {d.stopped_reason && (
-                            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-                              <div className="text-sm font-bold text-red-800 dark:text-red-200 mb-1">Stopped Reason:</div>
-                              <div className="text-sm text-red-700 dark:text-red-300">{d.stopped_reason}</div>
+                            <div className="p-3 bg-red-50/20 border border-red-200 rounded">
+                              <div className="text-sm font-bold text-red-800 mb-1">Stopped Reason:</div>
+                              <div className="text-sm text-red-700">{d.stopped_reason}</div>
                             </div>
                           )}
                           {d.container_reason && (
-                            <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded">
-                              <div className="text-sm font-bold text-orange-800 dark:text-orange-200 mb-1">Container Error:</div>
-                              <div className="text-sm text-orange-700 dark:text-orange-300 break-words">{d.container_reason}</div>
+                            <div className="p-3 bg-orange-50/20 border border-orange-200 rounded">
+                              <div className="text-sm font-bold text-orange-800 mb-1">Container Error:</div>
+                              <div className="text-sm text-orange-700 break-words">{d.container_reason}</div>
                             </div>
                           )}
                           {d.exit_code !== null && d.exit_code !== undefined && (
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded">
-                              <div className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Exit Code:</div>
-                              <div className="text-sm text-gray-700 dark:text-gray-300">{d.exit_code}</div>
+                            <div className="p-3 bg-secondary-100 border border-secondary-200 rounded-lg">
+                              <div className="text-sm font-bold text-secondary-800 mb-1">Exit Code:</div>
+                              <div className="text-sm text-secondary-700">{d.exit_code}</div>
                             </div>
                           )}
                         </div>
@@ -258,7 +337,7 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
                       {/* Additional Images */}
                       {Array.isArray(d.images) && d.images.length > 1 && (
                         <div>
-                          <div className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">All Images</div>
+                          <div className="text-sm font-bold text-secondary-700 mb-3">All Images</div>
                           <div className="space-y-3">
                             {d.images.map((img, i) => {
                               const uri = img && typeof img === 'object' ? img.uri : img;
@@ -266,25 +345,29 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
                               const containerName = img && typeof img === 'object' && img.container_name ? img.container_name : undefined;
                               const isLatest = img && typeof img === 'object' ? img.is_latest : false;
                               return (
-                                <div key={uri || i} className="p-3 bg-gray-50 dark:bg-gray-700 rounded border">
-                                  <div className="font-mono text-sm break-all text-gray-900 dark:text-gray-100 mb-2">
+                                <div key={uri || i} className="p-4 bg-white rounded-lg border border-secondary-200 shadow-sm hover:shadow-md transition-shadow">
+                                  <div className="text-sm break-all text-secondary-900 mb-2 bg-secondary-50 p-2 rounded border border-secondary-200">
                                     {uri}
                                   </div>
                                   {tag && (
                                     <div className="flex items-center space-x-2">
-                                      <span className="px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 text-sm font-medium">
+                                      <span className="badge-info text-sm font-medium">
                                         Latest: {tag}
                                       </span>
                                       {!isLatest && (
                                         <button
-                                          className="px-3 py-1 rounded bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
+                                          className={`text-sm font-medium transition-all duration-200 ${
+                                            d.service_uses_latest_tag 
+                                              ? "btn-primary" 
+                                              : "btn-success"
+                                          }`}
                                           onClick={() => handleDeploy(uri, tag, containerName)}
                                         >
-                                          Deploy
+                                          {d.service_uses_latest_tag ? "Restart" : "Deploy"}
                                         </button>
                                       )}
                                       {isLatest && (
-                                        <span className="px-2 py-1 rounded bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300 text-sm font-medium">
+                                        <span className="badge-secondary text-sm font-medium">
                                           Up to date
                                         </span>
                                       )}
@@ -303,6 +386,19 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, profile, region, a
             );
           })}
         </div>
+      )}
+      </div>
+
+      {/* Task Definition Editor Modal */}
+      {editingTaskDefinition && (
+        <TaskDefinitionEditor
+          cluster={cluster}
+          service={service}
+          region={region}
+          onClose={() => setEditingTaskDefinition(false)}
+          onUpdate={handleTaskDefinitionUpdate}
+          onSaving={(isSaving) => setUpdatingTaskDefinition(isSaving)}
+        />
       )}
     </div>
   );

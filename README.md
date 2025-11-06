@@ -1,349 +1,372 @@
-# ECS Explorer 🚀
+# ECS Control Center
 
-A modern, high-performance web application for managing and monitoring AWS ECS (Elastic Container Service) clusters, services, and tasks. Built with React and FastAPI, it provides an intuitive interface for deploying containerized applications and monitoring their health.
+A modern web application for managing Amazon ECS clusters, services, and tasks with AWS Access Key authentication.
 
-## ✨ Features
+## Features
 
-### 🔐 **Dual Authentication Support**
-- **AWS Profile**: For local development with AWS CLI configured profiles
-- **IAM Role**: For AWS deployments (EC2, ECS, Lambda) with attached IAM roles
-- **Real-time Authentication Testing**: Verify credentials with detailed identity information
+- 🔐 **AWS Access Key Authentication** - Simple and secure credential-based authentication
+- 📊 **Cluster Overview** - Monitor and manage ECS clusters with bulk deployment capabilities
+- 🔄 **Smart Deployment** - Automatic handling of both numbered tags and "latest" tag deployments
+- 📝 **Live & Historical Logs** - View container logs in real-time or query historical logs with timezone support
+- 🚀 **Bulk Operations** - Deploy all services or restart services with "latest" tags
+- 🌐 **Multi-Region Support** - Work across different AWS regions
+- 📈 **Real-time Metrics** - Monitor cluster and service performance
+- ⚙️ **Task Definition Editor** - Edit and update ECS task definitions with real-time validation
+- 🎯 **Resource Management** - Flexible CPU/Memory allocation at task or container level
+- 📋 **Deployment History & Rollback** - Track deployments and rollback to previous versions
+- 🔄 **Auto Image Updates** - Automatically populate latest Docker images when available
+- 🛡️ **Smart Validation** - Prevents invalid configurations and ensures proper resource allocation
+- ⏰ **Timezone Support** - View logs in multiple timezones (UTC, EST, PST, IST, EET, etc.)
 
-### 📊 **Cluster Management**
-- **Cluster Overview**: High-level view of all services in a cluster
-- **Service Status**: Monitor running, stopped, and failed services
-- **Update Detection**: Automatically detect when new container images are available
-- **Bulk Operations**: Deploy multiple services simultaneously
+## Tech Stack
 
-### 🐳 **Container Operations**
-- **Image Management**: View current and latest container image versions
-- **Smart Deployment**: Intelligent deployment based on image tagging strategy
-  - **Versioned Tags**: Update task definitions for semantic versioned images
-  - **Latest Tags**: Restart tasks to pull latest images automatically
-- **ECR Integration**: Seamless integration with Amazon Elastic Container Registry
-- **Image Digest Comparison**: Accurate update detection using image digests for "latest" tags
-- **One-Click Deployment**: Deploy latest images from ECR with a single click
-- **Task Monitoring**: Real-time task status and health monitoring
-- **Stopped Task Analysis**: View detailed information about failed tasks
+- **Frontend**: React 18, Tailwind CSS, Axios
+- **Backend**: FastAPI, Python 3.9+
+- **AWS Authentication**: AWS Access Key / Secret Key / Session Token
+- **AWS Integration**: Boto3
+- **Containerization**: Docker & Docker Compose
 
-### 🚀 **Deployment Features**
-- **Smart Deployment Strategy**: 
-  - **Versioned Images**: Full task definition updates with new image versions
-  - **Latest Tag Images**: Efficient task restart for automatic latest image pulling
-- **Bulk Operations**: Deploy or restart multiple services simultaneously
-- **Step-by-Step Tracking**: Visual deployment progress with 4-stage tracking
-- **Real-time Status**: Live updates on deployment progress
-- **Error Handling**: Detailed error messages and troubleshooting information
-- **Rollback Support**: Easy rollback to previous task definitions
+## Prerequisites
 
-### 🎨 **Modern UI/UX**
-- **Dark/Light Mode**: Toggle between themes for better user experience
-- **Responsive Design**: Works seamlessly on desktop and mobile devices
-- **Intuitive Interface**: Clean, modern design with collapsible sections
-- **Performance Optimized**: Caching and lazy loading for fast interactions
+- Node.js 16+ and npm
+- Python 3.9+
+- Docker and Docker Compose
+- AWS Account with ECS access
+- AWS Access Key ID and Secret Access Key (with appropriate permissions)
 
-## 🛠️ Tech Stack
+## Quick Start
 
-### **Backend**
-- **FastAPI**: Modern, fast web framework for building APIs
-- **Python 3.11**: Latest Python version for optimal performance
-- **Boto3**: AWS SDK for Python for ECS/ECR integration
-- **Pydantic**: Data validation and settings management
-- **Uvicorn**: ASGI server for production deployment
+### 1. Clone the Repository
 
-### **Frontend**
-- **React 18**: Modern React with hooks and functional components
-- **Tailwind CSS**: Utility-first CSS framework for rapid UI development
-- **Axios**: Promise-based HTTP client for API communication
-- **Custom Hooks**: Optimized with useCallback and useMemo for performance
-
-### **Infrastructure**
-- **Docker**: Containerized application for easy deployment
-- **Docker Compose**: Multi-container orchestration
-- **AWS Integration**: Native AWS services integration
-- **Proxy Configuration**: Seamless frontend-backend communication
-
-## 🚀 Quick Start
-
-### **Prerequisites**
-- Docker and Docker Compose installed
-- AWS credentials configured (for local development)
-- Git (to clone the repository)
-
-### **1. Clone the Repository**
 ```bash
 git clone <repository-url>
-cd ecs-explorer
+cd ecs-control-center
 ```
 
-### **2. Configure AWS Credentials**
-For local development, ensure your AWS credentials are configured:
+### 2. Environment Configuration
+
+Create a `.env` file in the root directory if needed for custom API base URLs:
 
 ```bash
-# Option 1: AWS CLI configuration
-aws configure
-
-# Option 2: Environment variables
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_DEFAULT_REGION=us-east-1
+# Optional: Only needed if you want to customize API endpoints
+# Create .env file
+nano .env
 ```
 
-### **3. Run the Application**
+**Example `.env` file (optional):**
+```env
+# Frontend Environment Variables (React requires REACT_APP_ prefix)
+REACT_APP_API_BASE=http://localhost:8000
+```
+
+**Note:** 
+- The `.env` file is optional for local development
+- Default API base URL is `http://localhost:8000`
+- For production, update `REACT_APP_API_BASE` to your production API URL
+- The `.env` file is already in `.gitignore` so it won't be committed
+
+### 3. Run the Application
+
 ```bash
-# Build and start all services
-docker-compose up --build
-
-# Or run in background
-docker-compose up -d --build
+docker-compose build && docker-compose up -d 
 ```
 
-### **4. Access the Application**
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+The application will be available at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
 
-## 📖 Usage Guide
+## AWS Configuration
 
-### **Getting Started**
-1. **Select Authentication Method**: Choose between AWS Profile or IAM Role
-2. **Select Region**: Choose your AWS region (e.g., us-east-1, eu-central-1)
-3. **Select Cluster**: Pick the ECS cluster you want to manage
-4. **View Services**: See all services in the cluster with their status
+### 1. AWS Credentials
 
-### **Deploying Applications**
+The application uses AWS Access Key authentication:
 
-#### **For Versioned Images (e.g., v1.2.3, v2.0.1)**
-1. **Select a Service**: Click on a service from the cluster overview
-2. **Check for Updates**: The app automatically detects if newer images are available
-3. **Deploy**: Click the "Deploy" button to update the task definition with the latest image
-4. **Monitor Progress**: Watch the real-time deployment status
+- **Access Key ID** (required) - Your AWS Access Key ID (starts with AKIA or ASIA)
+- **Secret Access Key** (required) - Your AWS Secret Access Key
+- **Session Token** (optional) - Required only for temporary credentials (ASIA keys)
 
-#### **For Latest Tag Images**
-1. **Select a Service**: Click on a service from the cluster overview
-2. **Check for Updates**: The app compares image digests to detect newer "latest" images
-3. **Restart**: Click the "Restart" button to stop current tasks and let ECS pull the latest image
-4. **Monitor Progress**: Watch the real-time restart status
+**Security Note:** 
+- Credentials are stored in browser `localStorage` (client-side only)
+- Credentials are never stored on the server
+- Each user session has isolated credentials
+- See [SECURITY.md](SECURITY.md) for detailed security information
 
-#### **Bulk Operations**
-1. **Cluster Overview**: View all services with their update status
-2. **Bulk Deploy**: Deploy all services with versioned image updates
-3. **Bulk Restart**: Restart all services using "latest" tag images
-4. **Mixed Operations**: Handle both deployment types simultaneously
+### 2. Required AWS Permissions
 
-### **Monitoring Tasks**
-1. **View Running Tasks**: See all currently running tasks
-2. **Check Stopped Tasks**: View details of failed or stopped tasks
-3. **Analyze Errors**: Get detailed error messages and exit codes
-4. **Monitor Health**: Track CPU, memory, and other resource usage
-
-## 🏷️ Image Tagging Strategies
-
-### **Versioned Tags (Semantic Versioning)**
-For images with versioned tags like `v1.2.3`, `2.0.1`, `latest-stable`:
-- **Detection**: Compares current image tag with latest available tag
-- **Deployment**: Updates task definition with new image URI
-- **Process**: Full ECS service update with new task definition
-- **UI Indicator**: Green "Deploy" button for versioned updates
-
-### **Latest Tags**
-For images using `latest` tag strategy:
-- **Detection**: Compares image digests to detect newer pushes
-- **Deployment**: Restarts running tasks to pull latest image
-- **Process**: ECS automatically pulls the latest image on restart
-- **UI Indicator**: Blue "Restart" button for latest tag services
-- **Efficiency**: Faster deployment as no task definition update needed
-
-### **Mixed Environments**
-The application intelligently handles clusters with both tagging strategies:
-- **Automatic Detection**: Identifies which services use which strategy
-- **Bulk Operations**: Separate "Deploy All" and "Restart All" buttons
-- **Visual Indicators**: Clear badges showing "latest" tag usage
-- **Unified Interface**: Single view for managing all deployment types
-
-## 🔧 Configuration
-
-### **Environment Variables**
-```bash
-# AWS Configuration
-AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
-AWS_CONFIG_FILE=/root/.aws/config
-
-# Application Configuration
-BACKEND_PORT=8000
-FRONTEND_PORT=3000
-```
-
-### **AWS Permissions Required**
-The application requires the following AWS permissions:
+Your AWS credentials need the following permissions:
 
 ```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ecs:ListClusters",
-                "ecs:ListServices",
-                "ecs:DescribeServices",
-                "ecs:ListTasks",
-                "ecs:DescribeTasks",
-                "ecs:DescribeTaskDefinition",
-                "ecs:RegisterTaskDefinition",
-                "ecs:UpdateService",
-                "ecs:StopTask",
-                "ecr:DescribeImages",
-                "ecr:DescribeRepositories",
-                "ecr:GetAuthorizationToken",
-                "logs:DescribeLogGroups",
-                "logs:DescribeLogStreams",
-                "logs:GetLogEvents",
-                "sts:GetCallerIdentity"
-            ],
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:ListClusters",
+        "ecs:ListServices",
+        "ecs:ListTasks",
+        "ecs:DescribeClusters",
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:DescribeTaskDefinition",
+        "ecs:RegisterTaskDefinition",
+        "ecs:UpdateService",
+        "ecs:StopTask",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchGetImage",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "cloudwatch:GetMetricStatistics"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
-## 🏗️ Architecture
+**Additional Permissions for Task Definition Editor:**
+- `ecs:RegisterTaskDefinition` - Create new task definition revisions
+- `ecs:UpdateService` - Update services with new task definitions
+- `ecr:DescribeRepositories` - List ECR repositories for image updates
+- `ecr:DescribeImages` - Get image metadata for latest version detection
+- `secretsmanager:GetSecretValue` - Access secrets for task definitions
+- `secretsmanager:DescribeSecret` - Validate secret ARNs
 
-### **Backend Architecture**
-```
-backend/
-├── main.py              # FastAPI application with all endpoints
-├── requirements.txt     # Python dependencies
-└── Dockerfile          # Backend container configuration
-```
+## Usage
 
-**Key Endpoints:**
-- `GET /clusters` - List all ECS clusters
-- `GET /services` - List services in a cluster
-- `GET /tasks` - List tasks for a service
-- `GET /task_details` - Get detailed task information
-- `POST /deploy` - Deploy new container images (supports both versioned and latest tags)
-- `GET /deployment_status` - Check deployment progress
-- `GET /cluster_overview` - Get cluster-wide overview with update detection
-- `GET /task_count` - Get active task counts for metrics
-- `GET /auth_test` - Test authentication credentials
-- `GET /log-target` - Resolve CloudWatch log targets
-- `WS /ws/logs` - WebSocket for real-time log streaming
+### 1. Authentication
 
-### **Frontend Architecture**
-```
-frontend/
-├── src/
-│   ├── components/      # React components
-│   ├── services/        # API service layer
-│   ├── utils/          # Utility functions
-│   └── App.js          # Main application component
-├── public/             # Static assets
-└── package.json        # Frontend dependencies
-```
+1. **Start the application**
+2. **Enter AWS Credentials**:
+   - **Access Key ID**: Your AWS Access Key ID
+   - **Secret Access Key**: Your AWS Secret Access Key
+   - **Session Token** (optional): Required only for temporary credentials
+3. **Click "Save Credentials"** to authenticate
+4. **Select Region** - Choose the AWS region you want to work with
 
-**Key Components:**
-- `AuthMethodSelector` - Authentication method selection with real-time testing
-- `ClusterOverview` - Cluster-wide service overview with bulk operations
-- `TaskDetailsPanel` - Detailed task information with smart deployment
-- `DeploymentStatusCard` - Real-time deployment tracking
-- `MetricsCards` - Dynamic metrics display (clusters, services, tasks)
-- `LogsPanel` - Real-time CloudWatch log streaming
+### 2. Using the Application
 
-## 🚀 Performance Optimizations
+1. **Enter AWS Credentials** - Provide your Access Key ID, Secret Key, and optional Session Token
+2. **Select Region** - Choose the AWS region
+3. **Select Cluster** - Choose an ECS cluster from the dropdown
+4. **Cluster Overview** - View all services and their status
+5. **Bulk Operations** - Deploy all services or restart services with "latest" tags
+6. **Individual Deployment** - Deploy or restart specific services
+7. **Task Definition Editing** - Edit task definitions with advanced resource management
+8. **Deployment History** - Track deployments and perform rollbacks
+9. **View Metrics & Logs** - Monitor performance and access real-time or historical logs
 
-### **Backend Optimizations**
-- **Session Caching**: LRU cache for AWS client sessions
-- **Connection Pooling**: Optimized boto3 configuration
-- **Async Endpoints**: Non-blocking API operations
-- **Error Handling**: Comprehensive error management
+#### Key Features
 
-### **Frontend Optimizations**
-- **Intelligent Caching**: Multi-level caching with TTL support
-- **Component Memoization**: useCallback and useMemo for performance
-- **Lazy Loading**: On-demand data fetching
-- **Efficient Re-renders**: Optimized state management
+- **Simple Authentication**: Just enter your AWS credentials - no complex setup required
+- **Smart Deployment Detection**: Automatically detects if services use numbered tags or "latest" tags
+- **Bulk Operations**: "Deploy All" for services with numbered tags, "Restart All" for "latest" tag services
+- **Progress Tracking**: Real-time status updates during bulk operations
+- **Advanced Task Management**: Complete task definition editing with validation
+- **Resource Flexibility**: Choose between task-level or container-level resource allocation
+- **Deployment Control**: Track history and perform safe rollbacks
+- **Historical Logs**: Query CloudWatch logs with custom time ranges and timezone support
 
-## 🔒 Security Features
+## Deployment Features
 
-- **Credential Management**: Secure AWS credential handling
-- **CORS Configuration**: Proper cross-origin resource sharing
-- **Input Validation**: Pydantic models for data validation
-- **Error Sanitization**: Safe error message handling
+### Smart ECR Image Handling
 
-## 🐛 Troubleshooting
+The application intelligently handles both types of ECR images:
 
-### **Common Issues**
+- **Numbered Tags** (e.g., `v1.2.3`): Updates task definition with new image URI
+- **Latest Tags** (e.g., `latest`): Stops running tasks to force ECS to pull the new image with updated digest
 
-**1. Authentication Errors**
-```bash
-# Check AWS credentials
-aws sts get-caller-identity
+### Bulk Operations
 
-# Verify profile configuration
-aws configure list
-```
+- **Deploy All**: Deploys all services with numbered tag updates
+- **Restart All**: Restarts all services using "latest" tags with available updates
+- **Progress Tracking**: Real-time status updates with success/failure counts
 
-**2. Container Build Issues**
-```bash
-# Rebuild containers
-docker-compose down
-docker-compose up --build --force-recreate
-```
+## Logs Features
 
-**3. Port Conflicts**
-```bash
-# Check if ports are in use
-lsof -i :3000
-lsof -i :8000
+### Live Logs
 
-# Use different ports
-docker-compose up -p 3001:3000 -p 8001:8000
-```
+- **Real-time Streaming**: View container logs as they're generated
+- **WebSocket Connection**: Efficient real-time log streaming
+- **Auto-refresh**: Configurable refresh intervals (1-60 seconds)
+- **Download**: Export logs to a text file
 
-**4. Latest Tag Detection Issues**
-```bash
-# Verify ECR repository has latest tag
-aws ecr describe-images --repository-name your-repo --image-ids imageTag=latest
+### Historical Logs
 
-# Check if image digest is different
-aws ecr describe-images --repository-name your-repo --query 'imageDetails[0].imageDigest'
-```
+- **Time Range Selection**: Quick ranges (1h, 2h, 6h, 12h, 24h) or custom date/time
+- **CloudWatch Insights**: Uses CloudWatch Insights for efficient log querying
+- **Timezone Support**: View logs in multiple timezones:
+  - UTC (Coordinated Universal Time)
+  - EST (Eastern Standard Time)
+  - PST (Pacific Standard Time)
+  - IST (Indian Standard Time)
+  - EET (Eastern European Time)
+  - And more...
+- **Fallback Mechanism**: Automatically falls back to direct log stream queries if Insights fails
 
-**5. Task Restart Issues**
-```bash
-# Check if tasks are running
-aws ecs list-tasks --cluster your-cluster --service-name your-service
+## Task Definition Editor
 
-# Verify ECS service configuration
-aws ecs describe-services --cluster your-cluster --services your-service
-```
+### Advanced Task Definition Management
 
-### **Debug Mode**
-```bash
-# Run with debug logging
-docker-compose up --build --force-recreate
-docker-compose logs -f backend
-docker-compose logs -f frontend
-```
+The Task Definition Editor provides comprehensive control over ECS task definitions with intelligent validation and real-time updates.
 
-## 🤝 Contributing
+#### Key Features
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- **⚙️ Complete Task Definition Editing**: Modify CPU, Memory, Environment Variables, Secrets, and Docker Images
+- **🎯 Flexible Resource Management**: Choose between task-level or container-level resource allocation
+- **🔄 Auto Image Updates**: Automatically populate latest Docker image URIs when updates are available
+- **🛡️ Smart Validation**: Ensures valid configurations and prevents deployment failures
+- **📋 Real-time Deployment**: Updates task definitions and deploys changes immediately
+- **📊 Deployment Status**: Live tracking of deployment progress and status
 
-## 📝 License
+#### Resource Management Options
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**Task-Level Resources:**
+- Set CPU and Memory at the task level
+- All containers share the allocated resources
+- Suitable for simple single-container services
 
-## 📞 Support
+**Container-Level Resources:**
+- Set CPU and Memory for individual containers
+- Fine-grained control over resource allocation
+- Uses `memoryReservation` for optimal container management
+- Suitable for multi-container services
 
-For support, email ask.arman990@gmail.com or create an issue in the repository.
-Feel free to contribute!
+**Validation Rules:**
+- At least one level (task or container) must specify CPU/Memory
+- Prevents invalid configurations that would cause deployment failures
+- Real-time validation with clear error messages
 
----
+#### Usage Workflow
 
-**Made with ❤️ for the AWS ECS community**
+1. **Select Service**: Choose an ECS service from the Cluster Overview
+2. **Open Task Details**: Click on the service to view detailed information
+3. **Edit Task Definition**: Click "⚙️ Edit Task Definition" button
+4. **Configure Resources**: 
+   - Clear task-level values to use container-level resources
+   - Or set container-level values while keeping task-level resources
+5. **Update Images**: Latest available images are automatically populated
+6. **Modify Environment**: Add/remove environment variables and secrets
+7. **Deploy Changes**: Click "🚀 Update & Deploy" to apply changes
+8. **Monitor Progress**: Watch real-time deployment status and progress
+
+#### Advanced Features
+
+**Auto Image Population:**
+- When editing a service with available image updates, the latest image URI is automatically populated
+- Visual indicators show which containers have update availability
+- Users can easily update to the latest versions
+
+**Secrets Management:**
+- View existing AWS Secrets Manager ARNs
+- Add new secrets with proper ARN format validation
+- Remove secrets by clearing the fields
+
+**Environment Variables:**
+- Add/remove environment variables dynamically
+- Proper key-value pair validation
+- Support for both simple values and complex configurations
+
+**Deployment Integration:**
+- Seamless integration with ECS service updates
+- Real-time deployment status tracking
+- Automatic service refresh after successful deployment
+- Error handling with clear feedback messages
+
+## Deployment History & Rollback
+
+### Track and Manage Deployments
+
+The application provides comprehensive deployment tracking and rollback capabilities for better operational control.
+
+#### Features
+
+- **📋 Deployment History**: Track all deployments with timestamps and status
+- **🔄 One-Click Rollback**: Rollback to previous task definition revisions
+- **📊 Status Monitoring**: Real-time deployment status tracking
+- **🎯 Selective Rollback**: Choose specific task definition revisions to rollback to
+
+#### How It Works
+
+1. **Automatic Tracking**: All deployments are automatically tracked in memory
+2. **Status Updates**: Real-time monitoring of deployment progress (PENDING, IN_PROGRESS, COMPLETED, FAILED)
+3. **Rollback Options**: Access rollback functionality from the deployment history
+4. **Safe Rollback**: Validates task definition compatibility before rollback
+
+#### Usage
+
+1. **View History**: Access deployment history from the service details
+2. **Monitor Status**: Track current deployment progress in real-time
+3. **Rollback**: Click rollback button next to any previous deployment
+4. **Confirm**: Confirm rollback to previous task definition revision
+
+## Troubleshooting
+
+### Common Issues
+
+#### AWS Authentication Errors
+- **Invalid Credentials**: Verify your Access Key ID and Secret Access Key are correct
+- **Expired Credentials**: If using temporary credentials (ASIA keys), ensure the Session Token is provided and not expired
+- **Insufficient Permissions**: Check that your AWS credentials have the required IAM permissions (see AWS Configuration section)
+- **Region Issues**: Ensure the selected region is correct and accessible with your credentials
+- **Network Errors**: If you see "Network Error", check that credentials are being sent correctly (they're sent in POST request bodies, not URL parameters)
+
+#### Deployment Errors
+- Check that the ECS service has the required IAM permissions
+- Verify that the ECR repository exists and is accessible
+- Ensure the task definition is valid
+
+#### Task Definition Editor Issues
+- **Validation Errors**: Ensure either task-level or container-level CPU/Memory is specified
+- **Image Update Issues**: Verify ECR repository access and image tag availability
+- **Secrets Management**: Check AWS Secrets Manager ARN format and permissions
+- **Resource Allocation**: Ensure total container resources don't exceed task limits
+
+#### Deployment History Issues
+- **Missing History**: Deployment history is stored in memory and resets on application restart
+- **Rollback Failures**: Verify that the target task definition revision still exists in AWS
+- **Status Updates**: Check network connectivity for real-time status updates
+
+## Production Deployment
+
+The application is designed to run on AWS ECS with:
+- Access Key authentication for AWS API access
+- Load balancer for high availability
+- HTTPS for secure credential transmission
+
+### Prerequisites
+- AWS CLI configured with appropriate permissions
+- ECR repositories for storing Docker images
+- ECS cluster (Fargate recommended)
+- SSL/TLS certificate for HTTPS (required for secure credential transmission)
+
+### Key ECS Features
+- **Access Key Authentication**: Users provide their own AWS credentials
+- **Multi-Container Task**: Both frontend and backend in single task
+- **Fargate Compatible**: Serverless container execution
+- **CloudWatch Logging**: Centralized logging
+- **Stateless Backend**: No credential storage on the server
+
+### Authentication for Production
+- Users enter their AWS Access Key credentials directly in the web interface
+- Credentials are stored only in browser `localStorage` (client-side)
+- Backend never stores credentials - each request includes credentials in the request body
+- HTTPS is required to protect credentials in transit
+
+## Security Considerations
+
+- **HTTPS Required**: Always use HTTPS in production to protect credentials in transit
+- **AWS IAM**: Use least-privilege IAM policies for Access Keys
+- **Credential Storage**: Credentials are stored in browser `localStorage` only (client-side)
+- **Multi-User Isolation**: Each browser session has isolated credentials
+- **No Server Storage**: Backend is stateless and never stores credentials
+- **Session Tokens**: Temporary credentials (ASIA keys) require Session Tokens
+- **Shared Computers**: Users should clear credentials when using shared computers
+- **Environment Variables**: Never commit sensitive data to version control
+
+For detailed security information, see [SECURITY.md](SECURITY.md).

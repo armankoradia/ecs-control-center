@@ -3,4 +3,5 @@ uvicorn[standard]
 boto3
 pydantic
 python-multipart
+python-jose[cryptography]
 

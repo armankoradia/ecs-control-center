@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import UserProfile from "./components/UserProfile";
+import ErrorBoundary from "./components/ErrorBoundary";
 import apiService from "./services/apiService";
-import ProfileSelector from "./components/ProfileSelector";
 import RegionSelector from "./components/RegionSelector";
 import ClusterSelector from "./components/ClusterSelector";
 import ServiceSelector from "./components/ServiceSelector";
@@ -8,16 +11,12 @@ import TaskDetailsPanel from "./components/TaskDetailsPanel";
 import LogsPanel from "./components/LogsPanel";
 import MetricsCards from "./components/MetricsCards";
 import ClusterOverview from "./components/ClusterOverview";
-import AuthMethodSelector from "./components/AuthMethodSelector";
+import DeploymentHistory from "./components/DeploymentHistory";
+import AccessKeySelector from "./components/AccessKeySelector";
 
-function App() {
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem('ecs-dark');
-    return saved ? saved === '1' : false;
-  });
-  const [profile, setProfile] = useState("");
+function AppContent() {
+  const { user } = useAuth();
   const [region, setRegion] = useState(() => localStorage.getItem('ecs-region') || "us-east-1");
-  const [authMethod, setAuthMethod] = useState(() => localStorage.getItem('ecs-auth-method') || "profile");
   const [clusters, setClusters] = useState([]);
   const [selectedCluster, setSelectedCluster] = useState(() => localStorage.getItem('ecs-cluster') || "");
   const [services, setServices] = useState([]);
@@ -26,19 +25,15 @@ function App() {
   const [loading, setLoading] = useState({ clusters: false, services: false, tasks: false });
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('ecs-dark', dark ? '1' : '0');
-  }, [dark]);
 
-  // Fetch clusters whenever profile, region, or auth method changes
+  // Fetch clusters whenever region changes
   const fetchClusters = useCallback(async (forceRefresh = false) => {
-    if (!profile || !region || !authMethod) return;
+    if (!region) return;
 
     setLoading(l => ({ ...l, clusters: true }));
     setError("");
     try {
-      const data = await apiService.getClusters(profile, region, authMethod, forceRefresh);
+      const data = await apiService.getClusters(region, forceRefresh);
       setClusters(data);
       setSelectedCluster(""); // reset cluster selection
       setServices([]);
@@ -53,18 +48,18 @@ function App() {
     } finally {
       setLoading(l => ({ ...l, clusters: false }));
     }
-  }, [profile, region, authMethod]);
+  }, [region]);
 
   useEffect(() => {
     fetchClusters();
   }, [fetchClusters]);
 
-  // Clear errors when authentication method changes (indicating successful auth)
+  // Clear errors when region is set
   useEffect(() => {
-    if (authMethod && profile && region) {
+    if (region) {
       setError("");
     }
-  }, [authMethod, profile, region]);
+  }, [region]);
 
   // Clear errors when no cluster is selected
   useEffect(() => {
@@ -75,12 +70,12 @@ function App() {
 
   // Fetch services when cluster changes
   const fetchServices = useCallback(async (forceRefresh = false) => {
-    if (!profile || !region || !selectedCluster || !authMethod) return;
+    if (!region || !selectedCluster) return;
 
     setLoading(l => ({ ...l, services: true }));
     setError(""); // Clear any previous errors
     try {
-      const data = await apiService.getServices(selectedCluster, profile, region, authMethod, forceRefresh);
+      const data = await apiService.getServices(selectedCluster, region, forceRefresh);
       setServices(data);
       setSelectedService(""); // reset service selection
       setTasks([]);
@@ -93,7 +88,7 @@ function App() {
     } finally {
       setLoading(l => ({ ...l, services: false }));
     }
-  }, [profile, region, selectedCluster, authMethod]);
+  }, [region, selectedCluster]);
 
   useEffect(() => {
     fetchServices();
@@ -101,12 +96,12 @@ function App() {
 
   // Fetch tasks when service changes
   const fetchTasks = useCallback(async (forceRefresh = false) => {
-    if (!profile || !region || !selectedCluster || !selectedService || !authMethod) return;
+    if (!region || !selectedCluster || !selectedService) return;
 
     setLoading(l => ({ ...l, tasks: true }));
     setError("");
     try {
-      const data = await apiService.getTasks(selectedCluster, selectedService, profile, region, authMethod, forceRefresh);
+      const data = await apiService.getTasks(selectedCluster, selectedService, region, forceRefresh);
       setTasks(data);
     } catch (err) {
       // Only set error if it's not an authentication issue that might be temporary
@@ -117,7 +112,7 @@ function App() {
     } finally {
       setLoading(l => ({ ...l, tasks: false }));
     }
-  }, [profile, region, selectedCluster, selectedService, authMethod]);
+  }, [region, selectedCluster, selectedService]);
 
   useEffect(() => {
     fetchTasks();
@@ -139,152 +134,197 @@ function App() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="min-h-screen bg-secondary-50">
       <div className="flex h-screen">
         {/* Sidebar */}
-        <aside className="w-72 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-          <div className="px-4 py-4 border-b border-gray-200 dark:border-gray-700">
+        <aside className="w-72 bg-white border-r border-secondary-200 flex flex-col shadow-sm">
+          <div className="px-6 py-5 border-b border-secondary-200 bg-gradient-to-br from-primary-50 to-white">
             <div className="flex justify-center">
-              <img src="/images/ECSControlCenter.png" alt="ECS Control Center" className="h-24 w-auto" />
+              <img src="/images/ECSControlCenter.png" alt="ECS Control Center" className="h-20 w-auto" />
             </div>
-            {/* <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Minimalist-driven Design</div> */}
+            <div className="mt-3 text-center">
+              <h1 className="text-lg font-bold text-secondary-900">ECS Control Center</h1>
+              <p className="text-xs text-secondary-500 mt-0.5">AWS ECS Management Platform</p>
+            </div>
           </div>
-          <div className="p-3 space-y-3">
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
             <div>
-              <ProfileSelector setProfile={setProfile} />
+              <AccessKeySelector visible={true} onSaved={() => fetchClusters(true)} />
             </div>
             <div>
               <RegionSelector region={region} setRegion={setRegion} />
             </div>
-            <div>
-              <AuthMethodSelector 
-                authMethod={authMethod} 
-                setAuthMethod={(v) => { setAuthMethod(v); localStorage.setItem('ecs-auth-method', v); }} 
-                profile={profile} 
-                region={region} 
-              />
-            </div>
-            <div className="pt-1 space-y-2">
-              <button 
-                onClick={refreshAll} 
+            <div className="pt-2">
+              <button
+                onClick={refreshAll}
                 disabled={isLoading}
-                className="w-full px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm"
+                className="btn-success w-full text-sm py-2.5 shadow-sm hover:shadow-md"
               >
-                {isLoading ? 'Refreshing...' : 'Refresh All'}
+                {isLoading ? (
+                  <span className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Refreshing...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh All
+                  </span>
+                )}
               </button>
-              <div className="w-28 mx-auto">
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-xs font-semibold ${!dark ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>Light</span>
-                  <div 
-                    onClick={() => setDark(d => !d)} 
-                    className="w-16 h-6 bg-gray-300 rounded-full p-0.5 cursor-pointer relative mx-3"
-                    style={{ backgroundColor: dark ? '#4B5563' : '#D1D5DB' }}
-                  >
-                    <div 
-                      className="w-5 h-5 bg-white rounded-full shadow-sm absolute top-0.5 transition-all duration-300"
-                      style={{ 
-                        transform: dark ? 'translateX(calc(100% - 4px))' : 'translateX(0px)',
-                        left: '2px'
-                      }}
-                    />
-                  </div>
-                  <span className={`text-xs font-semibold ${dark ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>Dark</span>
-                </div>
-              </div>
             </div>
           </div>
-          <div className="mt-auto p-4 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-            Built with FastAPI & React
+          <div className="p-4 border-t border-secondary-200 bg-secondary-50">
+            <div className="text-xs text-secondary-500 text-center">
+              <p className="font-medium">Built with FastAPI & React</p>
+              <p className="mt-1 text-secondary-400">v1.0.0</p>
+            </div>
           </div>
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-16 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-primary/20 dark:border-primary/30 flex items-center">
-            <div className="px-4 w-full flex items-center justify-between">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <header className="h-16 bg-white border-b border-secondary-200 shadow-sm flex items-center z-10">
+            <div className="px-6 w-full flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                {/* <img src="/images/TalentneuronLogo.svg" alt="Talentneuron" className="h-8" /> */}
-                <div className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                  ECS Control Center
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-md">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-secondary-900">ECS Control Center</h2>
+                    <p className="text-xs text-secondary-500">AWS ECS Management Platform</p>
+                  </div>
                 </div>
               </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                <span className="mr-2">Cluster</span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                  {selectedCluster || 'None'}
-                </span>
-                <span className="mx-2">Service</span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                  {selectedService || 'None'}
-                </span>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-3 px-4 py-2 bg-secondary-50 rounded-lg border border-secondary-200">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-secondary-600">Cluster:</span>
+                    <span className="badge-info font-semibold">
+                      {selectedCluster || 'None'}
+                    </span>
+                  </div>
+                  <div className="w-px h-4 bg-secondary-300"></div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-secondary-600">Service:</span>
+                    <span className="badge-success font-semibold">
+                      {selectedService || 'None'}
+                    </span>
+                  </div>
+                </div>
+                <UserProfile />
               </div>
             </div>
           </header>
 
-          <main className="p-3 space-y-3 overflow-auto">
-            <MetricsCards cluster={selectedCluster} service={selectedService} profile={profile} region={region} authMethod={authMethod} />
+          <main className="flex-1 overflow-y-auto scrollbar-thin bg-secondary-50 p-6">
+            <div className="space-y-6 animate-fade-in">
+              <MetricsCards cluster={selectedCluster} service={selectedService} region={region} />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <ClusterSelector clusters={clusters} selectedCluster={selectedCluster} setSelectedCluster={(v) => { setSelectedCluster(v); localStorage.setItem('ecs-cluster', v); }} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="card">
+                  <ClusterSelector clusters={clusters} selectedCluster={selectedCluster} setSelectedCluster={(v) => { setSelectedCluster(v); localStorage.setItem('ecs-cluster', v); }} />
+                </div>
+                <div className="card">
+                  <ServiceSelector services={services} selectedService={selectedService} setSelectedService={(v) => { setSelectedService(v); localStorage.setItem('ecs-service', v); }} />
+                </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <ServiceSelector services={services} selectedService={selectedService} setSelectedService={(v) => { setSelectedService(v); localStorage.setItem('ecs-service', v); }} />
-              </div>
-            </div>
 
-        {!profile && (
-          <div className="mb-4 p-3 rounded bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/40 dark:text-gray-200 dark:border-gray-700">
-            Select Profile to begin
-          </div>
-        )}
-        
-        {profile && !region && (
-          <div className="mb-4 p-3 rounded bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/40 dark:text-gray-200 dark:border-gray-700">
-            Select Region
-          </div>
-        )}
-        
-        {profile && region && !selectedCluster && (
-          <div className="mb-4 p-3 rounded bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/40 dark:text-gray-200 dark:border-gray-700">
-            {isLoading ? 'Connecting…' : 'Select ECS Cluster'}
-          </div>
-        )}
-        
-        {profile && region && selectedCluster && !selectedService && (
-          <div className="space-y-4">
-            <ClusterOverview 
-              cluster={selectedCluster} 
-              profile={profile} 
-              region={region} 
-              authMethod={authMethod}
-              onServiceSelect={(serviceName) => {
-                setSelectedService(serviceName);
-                localStorage.setItem('ecs-service', serviceName);
-              }}
-            />
-            <div className="mb-4 p-3 rounded bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/40 dark:text-gray-200 dark:border-gray-700">
-              {isLoading ? 'Connecting…' : 'Select ECS Service from overview above or use the dropdown'}
-            </div>
-          </div>
-        )}
-        
-        {error && (
-          <div className="mb-4 p-3 rounded bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800">
-            {error}
-          </div>
-        )}
+              {!region && (
+                <div className="card bg-info-50 border-info-200 animate-slide-down">
+                  <div className="flex items-center space-x-3">
+                    <svg className="w-5 h-5 text-info-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm font-medium text-info-800">Select Region</p>
+                  </div>
+                </div>
+              )}
 
-        {profile && region && selectedCluster && selectedService && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <TaskDetailsPanel tasks={tasks} loading={loading.tasks} cluster={selectedCluster} service={selectedService} profile={profile} region={region} authMethod={authMethod} />
-            <LogsPanel cluster={selectedCluster} service={selectedService} profile={profile} region={region} authMethod={authMethod} />
-          </div>
-        )}
+              {region && !selectedCluster && (
+                <div className="card bg-info-50 border-info-200 animate-slide-down">
+                  <div className="flex items-center space-x-3">
+                    <svg className="w-5 h-5 text-info-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm font-medium text-info-800">
+                      {isLoading ? 'Connecting…' : 'Select ECS Cluster'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              {region && selectedCluster && !selectedService && (
+                <div className="space-y-6">
+                  <ClusterOverview 
+                    cluster={selectedCluster} 
+                    region={region} 
+                    onServiceSelect={(serviceName) => {
+                      setSelectedService(serviceName);
+                      localStorage.setItem('ecs-service', serviceName);
+                    }}
+                  />
+                  <DeploymentHistory 
+                    cluster={selectedCluster} 
+                    region={region} 
+                  />
+                  <div className="card bg-info-50 border-info-200">
+                    <div className="flex items-center space-x-3">
+                      <svg className="w-5 h-5 text-info-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm font-medium text-info-800">
+                        {isLoading ? 'Connecting…' : 'Select ECS Service from overview above or use the dropdown'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {error && (
+                <div className="card bg-danger-50 border-danger-200 animate-slide-down">
+                  <div className="flex items-start space-x-3">
+                    <svg className="w-5 h-5 text-danger-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm font-medium text-danger-800">{error}</p>
+                  </div>
+                </div>
+              )}
+
+              {region && selectedCluster && selectedService && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <TaskDetailsPanel tasks={tasks} loading={loading.tasks} cluster={selectedCluster} service={selectedService} region={region} />
+                  <LogsPanel cluster={selectedCluster} service={selectedService} region={region} />
+                </div>
+              )}
+            </div>
           </main>
         </div>
       </div>
     </div>
+  );
+}
+
+function App() {
+  // No callback route needed in open source version
+
+  return (
+    <ErrorBoundary>
+      <AuthProvider>
+        <ProtectedRoute>
+          <AppContent />
+        </ProtectedRoute>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

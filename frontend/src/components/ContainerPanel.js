@@ -43,7 +43,7 @@ export default function ContainerPanel({ cluster, service, auth }) {
 
           {/* Logs Panel */}
           <div>
-            <LogsPanel logGroup={c.logGroup} logStream={c.logStream} profile={auth.profile} />
+            <LogsPanel logGroup={c.logGroup} logStream={c.logStream} />
           </div>
         </div>
       ))}

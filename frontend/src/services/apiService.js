@@ -4,32 +4,28 @@ import { clusterCache, serviceCache, taskCache, overviewCache, getCacheKey } fro
 
 // Create axios instance with optimized config
 const apiClient = axios.create({
-  timeout: 30000, // 30 second timeout
+  timeout: 60000, // 60 second timeout (increased for large clusters)
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor for logging
-apiClient.interceptors.request.use(
-  (config) => {
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
+// Request interceptor removed for open source version - no authentication required
 
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => {
-    console.log(`API Response: ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
-    console.error('API Response Error:', error.response?.status, error.message);
+    // Check if we received HTML instead of JSON
+    if (error.response && typeof error.response.data === 'string' && error.response.data.includes('<!DOCTYPE')) {
+      const htmlError = new Error('Backend returned HTML instead of JSON. Check if backend is running on the correct port.');
+      htmlError.isHtmlResponse = true;
+      htmlError.originalError = error;
+      return Promise.reject(htmlError);
+    }
+    
     return Promise.reject(error);
   }
 );
@@ -53,97 +49,123 @@ const cachedApiCall = async (cache, cacheKey, apiCall, forceRefresh = false) => 
 // API Service class
 class ApiService {
   // Generic GET method for endpoints not covered by specific methods
-  async get(url) {
-    return apiClient.get(url);
+  async get(url, options = {}) {
+    // Support POST via options.method
+    if (options.method === 'POST' && options.data) {
+      return apiClient.post(url, options.data);
+    }
+    return apiClient.get(url, options);
+  }
+
+  // Helper to add access key credentials to payload
+  addCredentials(payload) {
+    const akid = (localStorage.getItem('ecs-ak-id') || '').trim();
+    const secret = (localStorage.getItem('ecs-ak-secret') || '').trim();
+    const token = (localStorage.getItem('ecs-ak-token') || '').trim();
+    if (akid) payload.aws_access_key_id = akid;
+    if (secret) payload.aws_secret_access_key = secret;
+    if (token) payload.aws_session_token = token;
+    payload.auth_method = 'access_key';
+    return payload;
   }
   // Clusters
-  async getClusters(profile, region, authMethod, forceRefresh = false) {
-    const cacheKey = getCacheKey('clusters', profile, region, authMethod);
+  async getClusters(region, forceRefresh = false) {
+    const cacheKey = getCacheKey('clusters', null, region, 'access_key');
     return cachedApiCall(
       clusterCache,
       cacheKey,
-      () => apiClient.get(`${API_BASE}/clusters`, {
-        params: { profile, region, auth_method: authMethod }
-      }).then(res => res.data),
+      () => {
+        const payload = { region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/clusters`, payload).then(res => res.data);
+      },
       forceRefresh
     );
   }
 
   // Services
-  async getServices(cluster, profile, region, authMethod, forceRefresh = false) {
-    const cacheKey = getCacheKey('services', cluster, profile, region, authMethod);
+  async getServices(cluster, region, forceRefresh = false) {
+    const cacheKey = getCacheKey('services', cluster, null, region, 'access_key');
     return cachedApiCall(
       serviceCache,
       cacheKey,
-      () => apiClient.get(`${API_BASE}/services`, {
-        params: { cluster, profile, region, auth_method: authMethod }
-      }).then(res => res.data),
+      () => {
+        const payload = { cluster, region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/services`, payload).then(res => res.data);
+      },
       forceRefresh
     );
   }
 
   // Tasks
-  async getTasks(cluster, service, profile, region, authMethod, forceRefresh = false) {
-    const cacheKey = getCacheKey('tasks', cluster, service, profile, region, authMethod);
+  async getTasks(cluster, service, region, forceRefresh = false) {
+    const cacheKey = getCacheKey('tasks', cluster, service, null, region, 'access_key');
     return cachedApiCall(
       taskCache,
       cacheKey,
-      () => apiClient.get(`${API_BASE}/tasks`, {
-        params: { cluster, service, profile, region, auth_method: authMethod }
-      }).then(res => res.data),
+      () => {
+        const payload = { cluster, service, region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/tasks`, payload).then(res => res.data);
+      },
       forceRefresh
     );
   }
 
   // Task Details
-  async getTaskDetails(cluster, service, profile, region, authMethod, forceRefresh = false) {
-    const cacheKey = getCacheKey('task_details', cluster, service, profile, region, authMethod);
+  async getTaskDetails(cluster, service, region, forceRefresh = false) {
+    const cacheKey = getCacheKey('task_details', cluster, service, null, region, 'access_key');
     return cachedApiCall(
       taskCache,
       cacheKey,
-      () => apiClient.get(`${API_BASE}/task_details`, {
-        params: { cluster, service, profile, region, auth_method: authMethod }
-      }).then(res => res.data),
+      () => {
+        const payload = { cluster, service, region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/task_details`, payload).then(res => res.data);
+      },
       forceRefresh
     );
   }
 
   // Cluster Overview
-  async getClusterOverview(cluster, profile, region, authMethod, forceRefresh = false) {
-    const cacheKey = getCacheKey('cluster_overview', cluster, profile, region, authMethod);
+  async getClusterOverview(cluster, region, forceRefresh = false) {
+    const cacheKey = getCacheKey('cluster_overview', cluster, null, region, 'access_key');
     return cachedApiCall(
       overviewCache,
       cacheKey,
-      () => apiClient.get(`${API_BASE}/cluster_overview`, {
-        params: { cluster, profile, region, auth_method: authMethod }
-      }).then(res => res.data),
+      () => {
+        const payload = { cluster, region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/cluster_overview`, payload).then(res => res.data);
+      },
       forceRefresh
     );
   }
 
   // Deployment Status
-  async getDeploymentStatus(cluster, service, profile, region, authMethod) {
+  async getDeploymentStatus(cluster, service, region) {
     // No caching for deployment status as it changes frequently
-    return apiClient.get(`${API_BASE}/deployment_status`, {
-      params: { cluster, service, profile, region, auth_method: authMethod }
-    }).then(res => res.data);
+    const payload = { cluster, service, region };
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/deployment_status`, payload).then(res => res.data);
   }
 
   // Deploy
-  async deploy(cluster, service, containerName, profile, region, authMethod) {
+  async deploy(cluster, service, containerName, region) {
     // Clear relevant caches after deployment
-    const serviceCacheKey = getCacheKey('services', cluster, profile, region, authMethod);
-    const taskCacheKey = getCacheKey('tasks', cluster, service, profile, region, authMethod);
-    const overviewCacheKey = getCacheKey('cluster_overview', cluster, profile, region, authMethod);
+    const serviceCacheKey = getCacheKey('services', cluster, null, region, 'access_key');
+    const taskCacheKey = getCacheKey('tasks', cluster, service, null, region, 'access_key');
+    const overviewCacheKey = getCacheKey('cluster_overview', cluster, null, region, 'access_key');
     
-    const result = await apiClient.post(`${API_BASE}/deploy`, {
+    const payload = {
       cluster,
       service,
       container_name: containerName,
-      profile,
-      region,
-      auth_method: authMethod
-    }).then(res => res.data);
+      region
+    };
+    this.addCredentials(payload);
+    const result = await apiClient.post(`${API_BASE}/deploy`, payload).then(res => res.data);
 
     // Clear caches after successful deployment
     if (result && !result.error) {
@@ -155,11 +177,83 @@ class ApiService {
     return result;
   }
 
+  // Deployment History
+  async getDeploymentHistory(cluster = null, service = null, limit = 50, region = "us-east-1") {
+    // Use POST for requests with credentials to avoid URL length issues
+    const payload = {
+      region,
+      limit
+    };
+    if (cluster) payload.cluster = cluster;
+    if (service) payload.service = service;
+    this.addCredentials(payload);
+    
+    // Use POST to avoid URL length limits with credentials
+    return await apiClient.post(`${API_BASE}/deployment_history`, payload).then(res => res.data);
+  }
+
+  async refreshDeploymentStatus(deploymentId, region) {
+    const payload = {
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/deployment_history/${deploymentId}/refresh`, payload).then(res => res.data);
+  }
+
+  async getDeploymentDetails(deploymentId) {
+    return await apiClient.get(`${API_BASE}/deployment_history/${deploymentId}`).then(res => res.data);
+  }
+
+  async rollbackDeployment(deploymentId, region) {
+    const payload = {
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/rollback/${deploymentId}`, payload).then(res => res.data);
+  }
+
+  // Task Definition Management
+  async getTaskDefinition(cluster, service, region) {
+    // Use POST to avoid URL length limits with credentials
+    const payload = {
+      cluster,
+      service,
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/task_definition`, payload).then(res => res.data);
+  }
+
+  async getServiceImageInfo(cluster, service, region) {
+    // Use POST to avoid URL length limits with credentials
+    const payload = {
+      cluster,
+      service,
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/service_image_info`, payload).then(res => res.data);
+  }
+
+  async updateTaskDefinition(updateData, region) {
+    const payload = {
+      ...updateData,
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/task_definition/update`, payload).then(res => res.data);
+  }
+
   // Auth Test
-  async testAuth(profile, region, authMethod) {
-    return apiClient.get(`${API_BASE}/auth_test`, {
-      params: { profile, region, auth_method: authMethod }
-    }).then(res => res.data);
+  async testAuth(region) {
+    const payload = { region };
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/auth_test`, payload).then(res => res.data);
   }
 
   // Clear all caches
@@ -171,19 +265,19 @@ class ApiService {
   }
 
   // Clear specific caches
-  clearClusterCache(profile, region, authMethod) {
-    const cacheKey = getCacheKey('clusters', profile, region, authMethod);
+  clearClusterCache(region) {
+    const cacheKey = getCacheKey('clusters', null, region, 'access_key');
     clusterCache.delete(cacheKey);
   }
 
-  clearServiceCache(cluster, profile, region, authMethod) {
-    const cacheKey = getCacheKey('services', cluster, profile, region, authMethod);
+  clearServiceCache(cluster, region) {
+    const cacheKey = getCacheKey('services', cluster, null, region, 'access_key');
     serviceCache.delete(cacheKey);
   }
 
-  clearTaskCache(cluster, service, profile, region, authMethod) {
-    const taskCacheKey = getCacheKey('tasks', cluster, service, profile, region, authMethod);
-    const taskDetailsCacheKey = getCacheKey('task_details', cluster, service, profile, region, authMethod);
+  clearTaskCache(cluster, service, region) {
+    const taskCacheKey = getCacheKey('tasks', cluster, service, null, region, 'access_key');
+    const taskDetailsCacheKey = getCacheKey('task_details', cluster, service, null, region, 'access_key');
     taskCache.delete(taskCacheKey);
     taskCache.delete(taskDetailsCacheKey);
   }

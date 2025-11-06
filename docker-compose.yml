@@ -7,14 +7,32 @@ services:
     environment:
       - AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
       - AWS_CONFIG_FILE=/root/.aws/config
+      - OKTA_ISSUER=${OKTA_ISSUER}
+      - OKTA_CLIENT_ID=${OKTA_CLIENT_ID}
     volumes:
       - ~/.aws:/root/.aws:ro
+    user: "0:0"  # Run as root to access mounted files
+    networks:
+      - app-network
 
   frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_OKTA_ISSUER=${REACT_APP_OKTA_ISSUER}
+        - REACT_APP_OKTA_CLIENT_ID=${REACT_APP_OKTA_CLIENT_ID}
+        - REACT_APP_OKTA_REDIRECT_URI=${REACT_APP_OKTA_REDIRECT_URI}
+        - REACT_APP_API_BASE=${REACT_APP_API_BASE:-http://localhost:8000}
     container_name: ecs-explorer-frontend
     ports:
       - "3000:3000"
     depends_on:
       - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
