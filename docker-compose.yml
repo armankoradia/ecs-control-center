@@ -1,7 +1,7 @@
 services:
   backend:
     build: ./backend
-    container_name: ecs-explorer-backend
+    container_name: ecs-control-center-backend
     ports:
       - "8000:8000"
     environment:
@@ -24,7 +24,7 @@ services:
         - REACT_APP_OKTA_CLIENT_ID=${REACT_APP_OKTA_CLIENT_ID}
         - REACT_APP_OKTA_REDIRECT_URI=${REACT_APP_OKTA_REDIRECT_URI}
         - REACT_APP_API_BASE=${REACT_APP_API_BASE:-http://localhost:8000}
-    container_name: ecs-explorer-frontend
+    container_name: ecs-control-center-frontend
     ports:
       - "3000:3000"
     depends_on:

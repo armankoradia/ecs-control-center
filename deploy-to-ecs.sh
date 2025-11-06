@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ECS Deployment Script for ECS DeployMate
+# ECS Deployment Script for ECS Control Center
 # Usage: ./deploy-to-ecs.sh <AWS_REGION> <AWS_ACCOUNT_ID> <ECR_REPOSITORY_PREFIX>
 
 set -e
@@ -10,7 +10,7 @@ ACCOUNT_ID=${2:-123456789012}
 REPO_PREFIX=${3:-ecs-control-center}
 PROFILE=${4:-default}
 
-echo "🚀 Deploying ECS DeployMate to ECS..."
+echo "🚀 Deploying ECS ControlCenter to ECS..."
 echo "Region: $REGION"
 echo "Account ID: $ACCOUNT_ID"
 echo "Repository Prefix: $REPO_PREFIX"

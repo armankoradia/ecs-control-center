@@ -13,8 +13,8 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   // Mock user for open source version - no authentication required
   const mockUser = {
-    name: "ECS DeployMate User",
-    email: "user@ecsdeploymate.com",
+    name: "ECS ControlCenter User",
+    email: "user@ecscontrolcenter.com",
     sub: "open-source-user"
   };
 
