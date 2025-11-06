@@ -75,6 +75,11 @@ The application will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 
+### Homepage of the Application will look like this:
+![ECSControlCenterHome](image.png)
+
+Since the application doesn’t have authentication configured by default, you can access it by navigating to **[http://localhost:3000](http://localhost:3000)** once it’s running. However, when deploying to production, you can integrate Okta or another SSO provider for authentication.
+
 ## AWS Configuration
 
 ### 1. AWS Credentials
@@ -342,8 +347,17 @@ The application is designed to run on AWS ECS with:
 ### Prerequisites
 - AWS CLI configured with appropriate permissions
 - ECR repositories for storing Docker images
-- ECS cluster (Fargate recommended)
+- VPC and Subnets already present
+- IAM Role with Policy already created with permissions mentioned above
+- ECS Cluster
 - SSL/TLS certificate for HTTPS (required for secure credential transmission)
+
+### Deploying the Application to AWS
+- **deployment_files** directory contains a Shell script that can be used to automate deployment of this application on AWS ECS.
+- deploy_to_ecs.sh script is baseline script which can be modified to suit your usecase. It assumes VPC, Subnets and IAM Role is already present in the AWS Account where you want to deploy and uses HTTP (80) / HTTPS (443) Listener of ALB.
+
+#### Since we use AWS Credentials, it is highly advisable to use HTTPS (443) Listener of ALB with SSL/TLS Certificate using ACM
+
 
 ### Key ECS Features
 - **Access Key Authentication**: Users provide their own AWS credentials

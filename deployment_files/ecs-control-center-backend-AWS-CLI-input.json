@@ -1,0 +1,55 @@
+{
+    "family": "ecs-control-center-backend",
+    "containerDefinitions": [
+        {
+            "cpu": 1024,
+            "environmentFiles": [],
+            "essential": true,
+            "image": "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_PREFIX}-backend:latest",
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/ecs-control-center-backend",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": "${REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                },
+                "secretOptions": []
+            },
+            "memoryReservation": 1024,
+            "mountPoints": [],
+            "name": "backend",
+            "portMappings": [
+                {
+                    "appProtocol": "http",
+                    "containerPort": 8000,
+                    "hostPort": 0,
+                    "name": "backend-8000-tcp",
+                    "protocol": "tcp"
+                }
+            ],
+            "systemControls": [],
+            "ulimits": [],
+            "volumesFrom": []
+        }
+    ],
+    "taskRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/tn-ecs-control-center-role",
+    "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/tn-ecs-control-center-role",
+    "networkMode": "bridge",
+    "volumes": [],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "EC2"
+    ],
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    },
+    "enableFaultInjection": false,
+    "tags": [
+        {
+            "key": "Name",
+            "value": "ecs-control-center-backend"
+        }
+    ]
+}
