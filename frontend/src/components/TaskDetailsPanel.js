@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import apiService from "../services/apiService";
 import DeploymentStatusCard from "./DeploymentStatusCard";
 import TaskDefinitionEditor from "./TaskDefinitionEditor";
+import TaskCountEditor from "./TaskCountEditor";
 
 function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
   const [details, setDetails] = useState([]);
@@ -12,6 +13,10 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
   const [deploymentData, setDeploymentData] = useState(null);
   const [editingTaskDefinition, setEditingTaskDefinition] = useState(false);
   const [updatingTaskDefinition, setUpdatingTaskDefinition] = useState(false);
+  const [editingTaskCount, setEditingTaskCount] = useState(false);
+  const [updatingTaskCount, setUpdatingTaskCount] = useState(false);
+  const [quickUpdateDropdownOpen, setQuickUpdateDropdownOpen] = useState(false);
+  const [forcingDeployment, setForcingDeployment] = useState(false);
 
   const fetchTaskDetails = useCallback(async (forceRefresh = false) => {
     if (!cluster || !service) { 
@@ -62,6 +67,59 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
     setEditingTaskDefinition(true);
   }, []);
 
+  const handleEditTaskCount = useCallback(() => {
+    setEditingTaskCount(true);
+  }, []);
+
+  const handleTaskCountUpdate = useCallback((result) => {
+    setUpdatingTaskCount(false);
+    
+    // Show success message when task count update is successful
+    if (result && result.success) {
+      setDeploymentData({
+        cluster: result.cluster,
+        service: result.service,
+        message: result.message,
+        deployment_type: "task_count_update",
+        service_arn: result.service_arn,
+        deployment_id: `${result.cluster}-${result.service}-${Date.now()}`
+      });
+      setDeployMsg(`Task count updated successfully from ${result.previous_count} to ${result.new_count}`);
+    } else {
+      setDeployMsg("Task count update failed: " + (result?.error || "Unknown error"));
+    }
+    
+    // Refresh task details after update
+    setTimeout(() => {
+      fetchTaskDetails(true);
+    }, 2000);
+  }, [fetchTaskDetails]);
+
+  const handleForceNewDeployment = useCallback(async () => {
+    setQuickUpdateDropdownOpen(false);
+    setForcingDeployment(true);
+    setDeployMsg("");
+    setDeploymentData(null);
+    
+    try {
+      const result = await apiService.forceNewDeployment(cluster, service, region);
+      if (result && result.success) {
+        setDeploymentData(result);
+        setDeployMsg("Force new deployment initiated successfully");
+      } else {
+        setDeployMsg("Force new deployment failed: " + (result?.error || "Unknown error"));
+      }
+    } catch (err) {
+      setDeployMsg("Force new deployment failed: " + (err?.response?.data?.detail || err.message));
+    } finally {
+      setForcingDeployment(false);
+      // Refresh task details after deployment
+      setTimeout(() => {
+        fetchTaskDetails(true);
+      }, 2000);
+    }
+  }, [cluster, service, region, fetchTaskDetails]);
+
   const handleTaskDefinitionUpdate = useCallback((result) => {
     setUpdatingTaskDefinition(false);
     
@@ -97,16 +155,66 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
         </div>
         <div className="flex items-center space-x-3">
           {service && (
-            <button
-              onClick={handleEditTaskDefinition}
-              className="btn-primary text-sm py-2 px-4 flex items-center space-x-2"
-              title="Edit Task Definition (CPU, Memory, Environment Variables, Secrets)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <span>Edit Task Definition</span>
-            </button>
+            <>
+              <div className="relative">
+                <button
+                  onClick={() => setQuickUpdateDropdownOpen(!quickUpdateDropdownOpen)}
+                  className="btn-secondary text-sm py-2 px-4 flex items-center space-x-2"
+                  title="Quick update options"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Quick Update</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {quickUpdateDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setQuickUpdateDropdownOpen(false)}
+                    ></div>
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-secondary-200 z-20 py-1">
+                      <button
+                        onClick={() => {
+                          setQuickUpdateDropdownOpen(false);
+                          handleEditTaskCount();
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-secondary-700 hover:bg-secondary-50 flex items-center space-x-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span>Update Count</span>
+                      </button>
+                      <button
+                        onClick={handleForceNewDeployment}
+                        disabled={forcingDeployment}
+                        className="w-full text-left px-4 py-2 text-sm text-secondary-700 hover:bg-secondary-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>{forcingDeployment ? "Forcing Deployment..." : "Force New Deployment"}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={handleEditTaskDefinition}
+                className="btn-primary text-sm py-2 px-4 flex items-center space-x-2"
+                title="Edit Task Definition (CPU, Memory, Environment Variables, Secrets)"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span>Edit Task Definition</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -133,6 +241,30 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
             <span className="text-sm font-medium text-primary-800">Updating task definition and deploying…</span>
+          </div>
+        </div>
+      )}
+
+      {updatingTaskCount && (
+        <div className="mb-4 p-4 bg-secondary-50 border border-secondary-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="animate-spin h-5 w-5 text-secondary-600 mr-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm font-medium text-secondary-800">Updating task count…</span>
+          </div>
+        </div>
+      )}
+
+      {forcingDeployment && (
+        <div className="mb-4 p-4 bg-info-50 border border-info-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="animate-spin h-5 w-5 text-info-600 mr-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm font-medium text-info-800">Forcing new deployment…</span>
           </div>
         </div>
       )}
@@ -398,6 +530,18 @@ function TaskDetailsPanel({ tasks, loading, cluster, service, region }) {
           onClose={() => setEditingTaskDefinition(false)}
           onUpdate={handleTaskDefinitionUpdate}
           onSaving={(isSaving) => setUpdatingTaskDefinition(isSaving)}
+        />
+      )}
+
+      {/* Task Count Editor Modal */}
+      {editingTaskCount && (
+        <TaskCountEditor
+          cluster={cluster}
+          service={service}
+          region={region}
+          onClose={() => setEditingTaskCount(false)}
+          onUpdate={handleTaskCountUpdate}
+          onSaving={(isSaving) => setUpdatingTaskCount(isSaving)}
         />
       )}
     </div>

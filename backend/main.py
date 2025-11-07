@@ -450,6 +450,27 @@ class HistoricalLogsRequest(BaseModel):
     aws_secret_access_key: Optional[str] = None
     aws_session_token: Optional[str] = None
 
+class UpdateTaskCountRequest(BaseModel):
+    cluster: str
+    service: str
+    desired_count: int
+    profile: Optional[str] = None
+    region: str = "us-east-1"
+    auth_method: str = "access_key"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+
+class ForceNewDeploymentRequest(BaseModel):
+    cluster: str
+    service: str
+    profile: Optional[str] = None
+    region: str = "us-east-1"
+    auth_method: str = "access_key"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+
 # Endpoints
 @app.get("/")
 def root():
@@ -1115,6 +1136,89 @@ def get_deployment_status_impl(
         
     except Exception as e:
         return {"error": f"Failed to get deployment status: {str(e)}"}
+
+@app.post("/service/update_count")
+def update_service_count(request: UpdateTaskCountRequest):
+    """Update the desired count for an ECS service"""
+    try:
+        session = get_boto3_session(request.profile, request.region, request.auth_method, request.aws_access_key_id, request.aws_secret_access_key, request.aws_session_token)
+        ecs = session.client("ecs", config=BOTO3_CONFIG)
+        
+        # Validate desired count
+        if request.desired_count < 0:
+            raise HTTPException(status_code=400, detail="Desired count must be 0 or greater")
+        
+        # Get current service info
+        svc_response = ecs.describe_services(cluster=request.cluster, services=[request.service])
+        if not svc_response["services"]:
+            raise HTTPException(status_code=404, detail="Service not found")
+        
+        service_info = svc_response["services"][0]
+        current_desired_count = service_info.get("desiredCount", 0)
+        
+        # Update service desired count
+        update_response = ecs.update_service(
+            cluster=request.cluster,
+            service=request.service,
+            desiredCount=request.desired_count
+        )
+        
+        return {
+            "success": True,
+            "message": f"Service desired count updated from {current_desired_count} to {request.desired_count}",
+            "cluster": request.cluster,
+            "service": request.service,
+            "previous_count": current_desired_count,
+            "new_count": request.desired_count,
+            "service_arn": update_response["service"]["serviceArn"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update service count: {str(e)}")
+
+@app.post("/service/force_new_deployment")
+def force_new_deployment(request: ForceNewDeploymentRequest):
+    """Force a new deployment for an ECS service (mimics AWS Console behavior)"""
+    try:
+        session = get_boto3_session(request.profile, request.region, request.auth_method, request.aws_access_key_id, request.aws_secret_access_key, request.aws_session_token)
+        ecs = session.client("ecs", config=BOTO3_CONFIG)
+        
+        # Get current service info
+        svc_response = ecs.describe_services(cluster=request.cluster, services=[request.service])
+        if not svc_response["services"]:
+            raise HTTPException(status_code=404, detail="Service not found")
+        
+        # Force new deployment
+        update_response = ecs.update_service(
+            cluster=request.cluster,
+            service=request.service,
+            forceNewDeployment=True
+        )
+        
+        deployment_data = {
+            "cluster": request.cluster,
+            "service": request.service,
+            "message": "Force new deployment started - ECS will start new tasks with the current task definition",
+            "deployment_type": "force_new_deployment",
+            "service_arn": update_response["service"]["serviceArn"],
+            "deployment_id": f"{request.cluster}-{request.service}-{int(time.time())}"
+        }
+        
+        # Save to deployment history
+        save_deployment_history(deployment_data)
+        
+        return {
+            "success": True,
+            "message": "Force new deployment initiated successfully",
+            **deployment_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to force new deployment: {str(e)}")
 
 @app.post("/cluster_overview")
 def get_cluster_overview_post(request: ClusterOverviewRequest):

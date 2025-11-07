@@ -249,6 +249,29 @@ class ApiService {
     return await apiClient.post(`${API_BASE}/task_definition/update`, payload).then(res => res.data);
   }
 
+  async updateTaskCount(cluster, service, desiredCount, region) {
+    const payload = {
+      cluster,
+      service,
+      desired_count: desiredCount,
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/service/update_count`, payload).then(res => res.data);
+  }
+
+  async forceNewDeployment(cluster, service, region) {
+    const payload = {
+      cluster,
+      service,
+      region
+    };
+    this.addCredentials(payload);
+    
+    return await apiClient.post(`${API_BASE}/service/force_new_deployment`, payload).then(res => res.data);
+  }
+
   // Auth Test
   async testAuth(region) {
     const payload = { region };
