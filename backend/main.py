@@ -957,29 +957,11 @@ def deploy_new_image(data: DeployRequest):
                     break
         
         if has_latest_tag:
-            # For "latest" tag: We need to update the task definition to force ECS to re-resolve the "latest" tag
-            # Simply using forceNewDeployment=True won't pull the latest image - it uses cached digest
-            
-            # Create a new task definition with the same configuration to force re-resolution of "latest" tags
-            new_td = ecs.register_task_definition(
-                family=td["family"],
-                containerDefinitions=td["containerDefinitions"],
-                volumes=td.get("volumes", []),
-                networkMode=td.get("networkMode"),
-                placementConstraints=td.get("placementConstraints", []),
-                requiresCompatibilities=td.get("requiresCompatibilities", []),
-                cpu=td.get("cpu"),
-                memory=td.get("memory"),
-                executionRoleArn=td.get("executionRoleArn"),
-                taskRoleArn=td.get("taskRoleArn"),
-                tags=td.get("tags", [])
-            )["taskDefinition"]
-            
-            # Update service with new task definition (this will pull latest image)
+            # For "latest" tag: Just trigger force new deployment to pull the latest image
             update_response = ecs.update_service(
                 cluster=data.cluster,
                 service=data.service,
-                taskDefinition=new_td["taskDefinitionArn"]
+                forceNewDeployment=True
             )
             
             deployment_data = {
@@ -987,7 +969,6 @@ def deploy_new_image(data: DeployRequest):
                 "service": data.service,
                 "message": "Force new deployment started - ECS will pull latest image and start new tasks",
                 "deployment_type": "latest_tag_restart",
-                "new_task_definition": new_td["taskDefinitionArn"],
                 "service_arn": update_response["service"]["serviceArn"],
                 "deployment_id": f"{data.cluster}-{data.service}-{int(time.time())}"
             }
