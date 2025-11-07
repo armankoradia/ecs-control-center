@@ -1998,9 +1998,11 @@ def get_deployment_history_impl(cluster: str = None, service: str = None, limit:
         if service:
             filtered_history = [d for d in filtered_history if d.get("service") == service]
         
-        # Update status for recent deployments (last 10) that are not terminal
-        recent_deployments = [d for d in filtered_history[:10] if d.get("status") in ["IN_PROGRESS", "PENDING", "UNKNOWN"]]
-        for deployment in recent_deployments:
+        # Update status for all non-terminal deployments (up to 100 to avoid performance issues)
+        non_terminal_deployments = [d for d in filtered_history if d.get("status") in ["IN_PROGRESS", "PENDING", "UNKNOWN"]]
+        # Limit to first 100 non-terminal deployments to avoid overwhelming the system
+        deployments_to_update = non_terminal_deployments[:100]
+        for deployment in deployments_to_update:
             update_deployment_status(deployment["deployment_id"], profile, region, auth_method, aws_access_key_id, aws_secret_access_key, aws_session_token)
         
         # Limit results

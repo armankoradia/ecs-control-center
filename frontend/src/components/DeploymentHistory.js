@@ -85,7 +85,30 @@ function DeploymentHistory({ cluster, service, region }) {
 
   const formatTimestamp = (timestamp) => {
     try {
-      return new Date(timestamp).toLocaleString();
+      if (!timestamp) return timestamp;
+      
+      // If timestamp is an ISO string without timezone indicator, treat it as UTC
+      let date;
+      if (typeof timestamp === 'string') {
+        // Check if it's an ISO string without timezone (e.g., "2025-01-09T10:00:00")
+        if (timestamp.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/)) {
+          // Append 'Z' to indicate UTC
+          date = new Date(timestamp + 'Z');
+        } else {
+          // Already has timezone info or is in another format
+          date = new Date(timestamp);
+        }
+      } else {
+        date = new Date(timestamp);
+      }
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return timestamp;
+      }
+      
+      // Convert to local timezone and format
+      return date.toLocaleString();
     } catch {
       return timestamp;
     }
