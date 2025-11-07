@@ -471,6 +471,16 @@ class ForceNewDeploymentRequest(BaseModel):
     aws_secret_access_key: Optional[str] = None
     aws_session_token: Optional[str] = None
 
+class ServiceEventsRequest(BaseModel):
+    cluster: str
+    service: str
+    profile: Optional[str] = None
+    region: str = "us-east-1"
+    auth_method: str = "access_key"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+
 # Endpoints
 @app.get("/")
 def root():
@@ -1219,6 +1229,43 @@ def force_new_deployment(request: ForceNewDeploymentRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to force new deployment: {str(e)}")
+
+@app.post("/service/events")
+def get_service_events(request: ServiceEventsRequest):
+    """Get ECS service events (task placement, deployments, etc.)"""
+    try:
+        session = get_boto3_session(request.profile, request.region, request.auth_method, request.aws_access_key_id, request.aws_secret_access_key, request.aws_session_token)
+        ecs = session.client("ecs", config=BOTO3_CONFIG)
+        
+        # Get service details including events
+        svc_response = ecs.describe_services(cluster=request.cluster, services=[request.service])
+        if not svc_response["services"]:
+            raise HTTPException(status_code=404, detail="Service not found")
+        
+        service_info = svc_response["services"][0]
+        events = service_info.get("events", [])
+        
+        # Format events for frontend
+        formatted_events = []
+        for event in events:
+            formatted_events.append({
+                "id": event.get("id"),
+                "created_at": event.get("createdAt").isoformat() if event.get("createdAt") else None,
+                "message": event.get("message", "")
+            })
+        
+        # Sort by created_at descending (newest first)
+        formatted_events.sort(key=lambda x: x["created_at"] or "", reverse=True)
+        
+        return {
+            "events": formatted_events,
+            "count": len(formatted_events)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get service events: {str(e)}")
 
 @app.post("/cluster_overview")
 def get_cluster_overview_post(request: ClusterOverviewRequest):

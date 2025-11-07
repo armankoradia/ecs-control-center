@@ -9,6 +9,7 @@ import ClusterSelector from "./components/ClusterSelector";
 import ServiceSelector from "./components/ServiceSelector";
 import TaskDetailsPanel from "./components/TaskDetailsPanel";
 import LogsPanel from "./components/LogsPanel";
+import ServiceEvents from "./components/ServiceEvents";
 import MetricsCards from "./components/MetricsCards";
 import ClusterOverview from "./components/ClusterOverview";
 import DeploymentHistory from "./components/DeploymentHistory";
@@ -140,11 +141,11 @@ function AppContent() {
         <aside className="w-72 bg-white border-r border-secondary-200 flex flex-col shadow-sm">
           <div className="px-6 py-5 border-b border-secondary-200 bg-gradient-to-br from-primary-50 to-white">
             <div className="flex justify-center">
-              <img src="/images/ECSControlCenter.png" alt="ECS Control Center" className="h-20 w-auto" />
+              <img src="/images/ECSDeployMate.png" alt="ECS Deploy Mate" className="h-20 w-auto" />
             </div>
             <div className="mt-3 text-center">
-              <h1 className="text-lg font-bold text-secondary-900">ECS Control Center</h1>
-              <p className="text-xs text-secondary-500 mt-0.5">AWS ECS Management Platform</p>
+              <h1 className="text-lg font-bold text-secondary-900">ECS DeployMate</h1>
+              <p className="text-xs text-secondary-500 mt-0.5">AWS ECS Management</p>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
@@ -199,8 +200,8 @@ function AppContent() {
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-secondary-900">ECS Control Center</h2>
-                    <p className="text-xs text-secondary-500">AWS ECS Management Platform</p>
+                    <h2 className="text-lg font-bold text-secondary-900">ECS DeployMate</h2>
+                    <p className="text-xs text-secondary-500">Cloud Infrastructure Management</p>
                   </div>
                 </div>
               </div>
@@ -301,10 +302,13 @@ function AppContent() {
               )}
 
               {region && selectedCluster && selectedService && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <TaskDetailsPanel tasks={tasks} loading={loading.tasks} cluster={selectedCluster} service={selectedService} region={region} />
-                  <LogsPanel cluster={selectedCluster} service={selectedService} region={region} />
-                </div>
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <TaskDetailsPanel tasks={tasks} loading={loading.tasks} cluster={selectedCluster} service={selectedService} region={region} />
+                    <LogsPanel cluster={selectedCluster} service={selectedService} region={region} />
+                  </div>
+                  <ServiceEvents cluster={selectedCluster} service={selectedService} region={region} />
+                </>
               )}
             </div>
           </main>
@@ -329,4 +333,3 @@ function App() {
 }
 
 export default App;
-

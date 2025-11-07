@@ -272,6 +272,20 @@ class ApiService {
     return await apiClient.post(`${API_BASE}/service/force_new_deployment`, payload).then(res => res.data);
   }
 
+  async getServiceEvents(cluster, service, region, forceRefresh = false) {
+    const cacheKey = getCacheKey('service_events', cluster, service, region, 'access_key');
+    return cachedApiCall(
+      serviceCache,
+      cacheKey,
+      () => {
+        const payload = { cluster, service, region };
+        this.addCredentials(payload);
+        return apiClient.post(`${API_BASE}/service/events`, payload).then(res => res.data);
+      },
+      forceRefresh
+    );
+  }
+
   // Auth Test
   async testAuth(region) {
     const payload = { region };
