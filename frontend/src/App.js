@@ -141,11 +141,11 @@ function AppContent() {
         <aside className="w-72 bg-white border-r border-secondary-200 flex flex-col shadow-sm">
           <div className="px-6 py-5 border-b border-secondary-200 bg-gradient-to-br from-primary-50 to-white">
             <div className="flex justify-center">
-              <img src="/images/ECSDeployMate.png" alt="ECS Deploy Mate" className="h-20 w-auto" />
+              <img src="/images/ECSControlCenter.png" alt="ECS Deploy Mate" className="h-20 w-auto" />
             </div>
             <div className="mt-3 text-center">
-              <h1 className="text-lg font-bold text-secondary-900">ECS DeployMate</h1>
-              <p className="text-xs text-secondary-500 mt-0.5">AWS ECS Management</p>
+              <h1 className="text-lg font-bold text-secondary-900">ECS Control Center</h1>
+              <p className="text-xs text-secondary-500 mt-0.5">AWS ECS Management Platform</p>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
@@ -200,8 +200,8 @@ function AppContent() {
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-secondary-900">ECS DeployMate</h2>
-                    <p className="text-xs text-secondary-500">Cloud Infrastructure Management</p>
+                    <h2 className="text-lg font-bold text-secondary-900">ECS Control Center</h2>
+                    <p className="text-xs text-secondary-500">Manage ECS Clusters seamlessly</p>
                   </div>
                 </div>
               </div>
