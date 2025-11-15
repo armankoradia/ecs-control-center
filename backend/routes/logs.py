@@ -254,11 +254,14 @@ def _get_historical_logs_impl(
         elif not end_timestamp:
             end_timestamp = start_timestamp + (3600 * 1000)
         
-        query_string = """
+        # Use the user's limit parameter, but cap at CloudWatch Insights max (10,000)
+        # CloudWatch Insights has a maximum of 10,000 results per query
+        insights_limit = min(limit, 10000)
+        query_string = f"""
         fields @timestamp, @message
         | filter @message != ""
         | sort @timestamp desc
-        | limit 1000
+        | limit {insights_limit}
         """
         
         try:
@@ -272,7 +275,7 @@ def _get_historical_logs_impl(
             query_response = logs.start_query(**start_query_params)
             query_id = query_response["queryId"]
             
-            max_attempts = 10
+            max_attempts = 30  # Increased timeout for larger queries
             attempt = 0
             
             while attempt < max_attempts:
@@ -290,7 +293,10 @@ def _get_historical_logs_impl(
             if attempt >= max_attempts:
                 raise Exception("CloudWatch Insights query timeout")
             
+            # CloudWatch Insights returns all results at once (up to the limit in the query)
+            # No pagination needed - the query limit handles it
             results = results_response.get("results", [])
+            
             formatted_logs = []
             
             for result in results:
@@ -325,6 +331,10 @@ def _get_historical_logs_impl(
                         "formatted_time": formatted_time or datetime.fromtimestamp(timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S') if timestamp_ms else ""
                     })
             
+            # Apply user's limit if it's less than what we got
+            if len(formatted_logs) > limit:
+                formatted_logs = formatted_logs[:limit]
+            
             return {
                 "logs": formatted_logs,
                 "total": len(formatted_logs),
@@ -336,65 +346,154 @@ def _get_historical_logs_impl(
         except Exception as insights_error:
             # Fallback to log streams method
             try:
-                streams_response = logs.describe_log_streams(
-                    logGroupName=log_group,
-                    orderBy="LastEventTime",
-                    descending=True,
-                    limit=10
-                )
+                # Paginate through ALL log streams that have events in the time range
+                all_streams = []
+                next_token = None
+                max_streams_to_check = 100  # Reasonable limit to prevent excessive API calls
+                
+                while len(all_streams) < max_streams_to_check:
+                    if next_token:
+                        streams_response = logs.describe_log_streams(
+                            logGroupName=log_group,
+                            orderBy="LastEventTime",
+                            descending=True,
+                            limit=50,  # Get more streams per request
+                            nextToken=next_token
+                        )
+                    else:
+                        streams_response = logs.describe_log_streams(
+                            logGroupName=log_group,
+                            orderBy="LastEventTime",
+                            descending=True,
+                            limit=50
+                        )
+                    
+                    streams = streams_response.get("logStreams", [])
+                    
+                    # Filter streams that have events in our time range
+                    for stream in streams:
+                        last_event_time = stream.get("lastEventTimestamp", 0)
+                        first_event_time = stream.get("firstEventTimestamp", 0)
+                        
+                        # Stream has events in range if it overlaps with our time range
+                        if not (last_event_time < start_timestamp or first_event_time > end_timestamp):
+                            all_streams.append(stream)
+                    
+                    next_token = streams_response.get("nextToken")
+                    if not next_token:
+                        break
                 
                 all_logs = []
                 
-                for stream in streams_response.get("logStreams", []):
+                # Process each stream with pagination to get ALL events in time range
+                for stream in all_streams:
                     stream_name = stream["logStreamName"]
                     last_event_time = stream.get("lastEventTimestamp", 0)
                     first_event_time = stream.get("firstEventTimestamp", 0)
-                    
-                    if last_event_time < start_timestamp and first_event_time > end_timestamp:
-                        continue
                     
                     time_range_span = end_timestamp - start_timestamp
                     mid_point = start_timestamp + (time_range_span / 2)
                     start_from_head = (mid_point - first_event_time) < (last_event_time - mid_point)
                     
-                    try:
-                        events_response = logs.get_log_events(
-                            logGroupName=log_group,
-                            logStreamName=stream_name,
-                            startTime=start_timestamp,
-                            endTime=end_timestamp,
-                            startFromHead=start_from_head,
-                            limit=1000
-                        )
-                    except Exception:
-                        events_response = logs.get_log_events(
-                            logGroupName=log_group,
-                            logStreamName=stream_name,
-                            startFromHead=start_from_head,
-                            limit=1000
-                        )
+                    # Paginate through all events in this stream within the time range
+                    stream_next_token = None
+                    stream_events_collected = 0
+                    max_events_per_stream = 10000  # Reasonable limit per stream
+                    events_in_range_found = False
                     
-                    stream_logs = events_response.get("events", [])
-                    
-                    filtered_events = []
-                    for event in stream_logs:
-                        message = event.get("message", "")
-                        timestamp = event.get("timestamp", 0)
-                        
-                        if timestamp < start_timestamp or timestamp > end_timestamp:
-                            continue
-                        
-                        if message:
-                            formatted_time = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    while stream_events_collected < max_events_per_stream:
+                        try:
+                            # Build request parameters
+                            request_params = {
+                                "logGroupName": log_group,
+                                "logStreamName": stream_name,
+                                "startFromHead": start_from_head,
+                                "limit": 10000  # Get more events per request
+                            }
                             
-                            filtered_events.append({
-                                "message": message,
-                                "timestamp": timestamp,
-                                "formatted_time": formatted_time
-                            })
+                            # Add time range if supported
+                            try:
+                                request_params["startTime"] = start_timestamp
+                                request_params["endTime"] = end_timestamp
+                            except:
+                                pass  # Some AWS SDK versions may not support these
+                            
+                            # Add pagination token if we have one
+                            if stream_next_token:
+                                request_params["nextToken"] = stream_next_token
+                            
+                            events_response = logs.get_log_events(**request_params)
+                            
+                        except Exception as e:
+                            # If startTime/endTime not supported, try without them
+                            try:
+                                request_params = {
+                                    "logGroupName": log_group,
+                                    "logStreamName": stream_name,
+                                    "startFromHead": start_from_head,
+                                    "limit": 10000
+                                }
+                                if stream_next_token:
+                                    request_params["nextToken"] = stream_next_token
+                                events_response = logs.get_log_events(**request_params)
+                            except Exception as e2:
+                                # Skip this stream if we can't get events
+                                break
+                        
+                        stream_logs = events_response.get("events", [])
+                        if not stream_logs:
+                            break
+                        
+                        filtered_events = []
+                        for event in stream_logs:
+                            message = event.get("message", "")
+                            timestamp = event.get("timestamp", 0)
+                            
+                            # Filter by time range (in case API didn't filter properly)
+                            if timestamp < start_timestamp or timestamp > end_timestamp:
+                                continue
+                            
+                            events_in_range_found = True
+                            
+                            if message:
+                                formatted_time = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                                
+                                filtered_events.append({
+                                    "message": message,
+                                    "timestamp": timestamp,
+                                    "formatted_time": formatted_time
+                                })
+                        
+                        all_logs.extend(filtered_events)
+                        stream_events_collected += len(stream_logs)
+                        
+                        # Get next token for pagination
+                        stream_next_token = events_response.get("nextForwardToken")
+                        if not stream_next_token:
+                            break
+                        
+                        # If we're going backwards and hit events outside our range, we're done
+                        # If we're going forwards and hit events outside our range, we're done
+                        if events_in_range_found:
+                            # Check if we've gone past our time range
+                            if start_from_head:
+                                # Going forward - if last event is past end_time, we're done
+                                if stream_logs and stream_logs[-1].get("timestamp", 0) > end_timestamp:
+                                    break
+                            else:
+                                # Going backward - if last event is before start_time, we're done
+                                if stream_logs and stream_logs[-1].get("timestamp", 0) < start_timestamp:
+                                    break
+                        
+                        # Stop if we've collected enough logs (respecting user's limit)
+                        if len(all_logs) >= limit * 2:  # Collect a bit more for sorting, then trim
+                            break
                     
-                    all_logs.extend(filtered_events)
+                    # Stop processing more streams if we have enough logs
+                    if len(all_logs) >= limit * 2:
+                        break
                 
+                # Sort by timestamp descending and apply user's limit
                 all_logs.sort(key=lambda x: x["timestamp"], reverse=True)
                 all_logs = all_logs[:limit]
                 
@@ -402,7 +501,8 @@ def _get_historical_logs_impl(
                     "logs": all_logs,
                     "total": len(all_logs),
                     "log_group": log_group,
-                    "method": "log_streams"
+                    "method": "log_streams",
+                    "streams_checked": len(all_streams)
                 }
                 
             except Exception as stream_error:
@@ -443,4 +543,3 @@ def get_historical_logs(
         cluster, service, start_time, end_time, limit, profile, region, auth_method,
         aws_access_key_id, aws_secret_access_key, aws_session_token
     )
-
