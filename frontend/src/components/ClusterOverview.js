@@ -663,18 +663,22 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
               </div>
             </div>
             
-            {/* Image URI info for services with updates */}
-            {service.status === "UPDATES_AVAILABLE" && service.current_image_uri && service.latest_image_uri && (
+            {/* Image URI info - always show current deployed image */}
+            {service.current_image_uri && (
               <div className="mt-3 pt-3 border-t border-secondary-200">
                 <div className="p-3 bg-secondary-50 rounded-lg border border-secondary-200">
-                  <div className="text-xs text-secondary-600 font-medium mb-1">Current Image:</div>
-                  <div className="text-xs text-secondary-900 break-all mb-2 p-2 bg-white rounded border border-secondary-200">
+                  <div className="text-xs text-secondary-600 font-medium mb-1">Deployed Image:</div>
+                  <div className="text-xs text-secondary-900 break-all p-2 bg-white rounded border border-secondary-200 font-mono">
                     {service.current_image_uri}
                   </div>
-                  <div className="text-xs text-secondary-600 font-medium mb-1">Latest Image:</div>
-                  <div className="text-xs text-accent-700 break-all p-2 bg-accent-50 rounded border border-accent-200">
-                    {service.latest_image_uri}
-                  </div>
+                  {service.status === "UPDATES_AVAILABLE" && service.latest_image_uri && (
+                    <>
+                      <div className="text-xs text-secondary-600 font-medium mt-2 mb-1">Latest Available:</div>
+                      <div className="text-xs text-accent-700 break-all p-2 bg-accent-50 rounded border border-accent-200 font-mono">
+                        {service.latest_image_uri}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
