@@ -17,6 +17,11 @@ A modern web application for managing Amazon ECS clusters, services, and tasks w
 - 🔄 **Auto Image Updates** - Automatically populate latest Docker images when available
 - 🛡️ **Smart Validation** - Prevents invalid configurations and ensures proper resource allocation
 - ⏰ **Timezone Support** - View logs in multiple timezones (UTC, EST, PST, IST, EET, etc.)
+- 🔁 **Trigger Restart**: Allows you to restart all ECS Services present in the selected ECS Cluster
+- 🛠️ **Task Level Operations**:
+    - 🆕 Allows user to trigger "Force New Deployment"
+    - 🔢 Allows user to change the Task Count
+- 🫧 **Clean and Simple UI** - Minimalist and Clean UI for ease of use
 
 ## Tech Stack
 
