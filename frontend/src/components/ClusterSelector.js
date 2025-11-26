@@ -2,6 +2,11 @@
 import React from "react";
 
 export default function ClusterSelector({ clusters, selectedCluster, setSelectedCluster }) {
+  // Extract cluster names and sort alphabetically
+  const sortedClusters = [...clusters]
+    .map(c => c.split("/").pop())
+    .sort((a, b) => a.localeCompare(b));
+
   return (
     <div>
       <label className="block text-sm font-semibold text-secondary-900 mb-2 flex items-center">
@@ -16,8 +21,8 @@ export default function ClusterSelector({ clusters, selectedCluster, setSelected
         onChange={(e) => setSelectedCluster(e.target.value)}
       >
         <option value="">-- Select Cluster --</option>
-        {clusters.map((c) => (
-          <option key={c} value={c.split("/").pop()}>{c.split("/").pop()}</option>
+        {sortedClusters.map((c) => (
+          <option key={c} value={c}>{c}</option>
         ))}
       </select>
     </div>

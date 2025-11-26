@@ -1,7 +1,19 @@
 // frontend/src/components/ServiceSelector.js
 import React from "react";
+import { groupByEnvironment, getEnvironmentDisplayName, getEnvironmentOrder } from "../utils/sortingUtils";
 
 export default function ServiceSelector({ services, selectedService, setSelectedService }) {
+  // Group services by environment
+  const grouped = groupByEnvironment(services);
+  const envOrder = getEnvironmentOrder();
+  
+  // Sort environment groups by priority - dev first, then others alphabetically
+  const sortedEnvs = Object.keys(grouped).sort((a, b) => {
+    const orderA = envOrder[a] !== undefined ? envOrder[a] : 999;
+    const orderB = envOrder[b] !== undefined ? envOrder[b] : 999;
+    return orderA - orderB;
+  });
+
   return (
     <div>
       <label className="block text-sm font-semibold text-secondary-900 mb-2 flex items-center">
@@ -16,8 +28,12 @@ export default function ServiceSelector({ services, selectedService, setSelected
         onChange={(e) => setSelectedService(e.target.value)}
       >
         <option value="">-- Select Service --</option>
-        {services.map((s) => (
-          <option key={s} value={s}>{s}</option>
+        {sortedEnvs.map((env) => (
+          <optgroup key={env} label={getEnvironmentDisplayName(env)}>
+            {grouped[env].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </div>
