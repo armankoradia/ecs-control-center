@@ -7,6 +7,39 @@ function AccessKeySelector({ visible, onSaved }) {
   const [saved, setSaved] = useState(false);
   const [showSecurityWarning, setShowSecurityWarning] = useState(true);
   const [hasStoredCredentials, setHasStoredCredentials] = useState(false);
+  const [parsedFieldCount, setParsedFieldCount] = useState(0);
+
+  // Parses a pasted AWS credentials block, e.g.:
+  //   [123456789012_my-profile]
+  //   aws_access_key_id=ASIA...
+  //   aws_secret_access_key=...
+  //   aws_session_token=...
+  // Returns null when the pasted text isn't a credentials block (a single
+  // value pastes normally instead).
+  const parseCredentialsBlock = (text) => {
+    if (!text || !/aws_access_key_id/i.test(text)) return null;
+    const get = (key) => {
+      const match = text.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'im'));
+      return match ? match[1].trim().replace(/^["']|["']$/g, '') : '';
+    };
+    const parsedAccessKeyId = get('aws_access_key_id');
+    const parsedSecretAccessKey = get('aws_secret_access_key');
+    const parsedSessionToken = get('aws_session_token');
+    if (!parsedAccessKeyId || !parsedSecretAccessKey) return null;
+    return { accessKeyId: parsedAccessKeyId, secretAccessKey: parsedSecretAccessKey, sessionToken: parsedSessionToken };
+  };
+
+  const handleCredentialPaste = (e) => {
+    const text = e.clipboardData.getData('text');
+    const parsed = parseCredentialsBlock(text);
+    if (!parsed) return; // not a full block - let the paste happen normally
+    e.preventDefault();
+    setAccessKeyId(parsed.accessKeyId);
+    setSecretAccessKey(parsed.secretAccessKey);
+    setSessionToken(parsed.sessionToken);
+    setParsedFieldCount(parsed.sessionToken ? 3 : 2);
+    setTimeout(() => setParsedFieldCount(0), 4000);
+  };
 
   useEffect(() => {
     // Check if credentials are already stored
@@ -130,43 +163,60 @@ function AccessKeySelector({ visible, onSaved }) {
         </div>
       )}
 
+      {parsedFieldCount > 0 && (
+        <div className="mb-4 p-3 bg-accent-50 border border-accent-200 rounded-lg flex items-center">
+          <svg className="w-4 h-4 text-accent-600 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-xs text-accent-800 font-medium">
+            Parsed {parsedFieldCount} of 3 fields from pasted credentials. Review below and click Save.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-4">
         <div>
           <label className="block text-xs font-medium text-secondary-700 mb-1.5">AWS Access Key ID</label>
-          <input 
+          <input
             type="text"
-            value={accessKeyId} 
-            onChange={e => setAccessKeyId(e.target.value)} 
-            className="input-field text-sm" 
-            placeholder="AKIA..." 
-            style={{ 
+            value={accessKeyId}
+            onChange={e => setAccessKeyId(e.target.value)}
+            onPaste={handleCredentialPaste}
+            className="input-field text-sm"
+            placeholder="AKIA... (or paste your whole credentials block here)"
+            style={{
               minWidth: '100%',
               textOverflow: 'clip',
               overflowX: 'auto',
               whiteSpace: 'nowrap'
             }}
           />
+          <p className="text-xs text-secondary-500 mt-1">
+            Tip: paste an entire credentials block (with aws_access_key_id / aws_secret_access_key / aws_session_token lines) into any field below to auto-fill all three.
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-secondary-700 mb-1.5">AWS Secret Access Key</label>
-          <input 
-            type="password" 
-            value={secretAccessKey} 
-            onChange={e => setSecretAccessKey(e.target.value)} 
-            className="input-field" 
-            placeholder="••••••" 
+          <input
+            type="password"
+            value={secretAccessKey}
+            onChange={e => setSecretAccessKey(e.target.value)}
+            onPaste={handleCredentialPaste}
+            className="input-field"
+            placeholder="••••••"
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-secondary-700 mb-1.5">
             AWS Session Token <span className="text-secondary-500 font-normal">(optional)</span>
           </label>
-          <input 
-            type="password" 
-            value={sessionToken} 
-            onChange={e => setSessionToken(e.target.value)} 
-            className="input-field" 
-            placeholder="Optional session token" 
+          <input
+            type="password"
+            value={sessionToken}
+            onChange={e => setSessionToken(e.target.value)}
+            onPaste={handleCredentialPaste}
+            className="input-field"
+            placeholder="Optional session token"
           />
         </div>
         <div className="pt-2 flex items-center justify-between gap-2">

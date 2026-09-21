@@ -1,7 +1,7 @@
 """Service-related routes."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from models.schemas import (
     ServicesRequest,
     ServiceEventsRequest,
@@ -11,10 +11,13 @@ from models.schemas import (
 )
 from utils.aws import get_boto3_session
 from utils.ecr import extract_ecr_info, unified_image_comparison
+from utils.auth import get_user_from_request
 from services.deployment_history import save_deployment_history
 from config.settings import BOTO3_CONFIG
+import logging
 import time
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -64,31 +67,43 @@ def list_services(
 
 
 @router.post("/service/update_count")
-def update_service_count(request: UpdateTaskCountRequest):
+def update_service_count(request: UpdateTaskCountRequest, http_request: Request):
     """Update the desired count for an ECS service"""
     try:
+        user = get_user_from_request(http_request)
         session = get_boto3_session(request.profile, request.region, request.auth_method, request.aws_access_key_id, request.aws_secret_access_key, request.aws_session_token)
         ecs = session.client("ecs", config=BOTO3_CONFIG)
-        
-        # Validate desired count
+
         if request.desired_count < 0:
             raise HTTPException(status_code=400, detail="Desired count must be 0 or greater")
-        
-        # Get current service info
+
         svc_response = ecs.describe_services(cluster=request.cluster, services=[request.service])
         if not svc_response["services"]:
             raise HTTPException(status_code=404, detail="Service not found")
-        
+
         service_info = svc_response["services"][0]
         current_desired_count = service_info.get("desiredCount", 0)
-        
-        # Update service desired count
+
         update_response = ecs.update_service(
             cluster=request.cluster,
             service=request.service,
-            desiredCount=request.desired_count
+            desiredCount=request.desired_count,
         )
-        
+
+        save_deployment_history({
+            "deployment_id": f"count-{request.cluster}-{request.service}-{int(time.time())}",
+            "deployment_type": "update_count",
+            "action_type": "update_count",
+            "cluster": request.cluster,
+            "service": request.service,
+            "region": request.region,
+            "message": f"Task count changed: {current_desired_count} → {request.desired_count}",
+            "service_arn": update_response["service"]["serviceArn"],
+            "username": user["username"],
+            "email": user["email"],
+            "details": {"previous_count": current_desired_count, "new_count": request.desired_count},
+        })
+
         return {
             "success": True,
             "message": f"Service desired count updated from {current_desired_count} to {request.desired_count}",
@@ -96,9 +111,9 @@ def update_service_count(request: UpdateTaskCountRequest):
             "service": request.service,
             "previous_count": current_desired_count,
             "new_count": request.desired_count,
-            "service_arn": update_response["service"]["serviceArn"]
+            "service_arn": update_response["service"]["serviceArn"],
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -106,12 +121,13 @@ def update_service_count(request: UpdateTaskCountRequest):
 
 
 @router.post("/service/force_new_deployment")
-def force_new_deployment(request: ForceNewDeploymentRequest):
+def force_new_deployment(request: ForceNewDeploymentRequest, http_request: Request):
     """Force a new deployment for an ECS service (mimics AWS Console behavior)"""
     try:
+        user = get_user_from_request(http_request)
         session = get_boto3_session(request.profile, request.region, request.auth_method, request.aws_access_key_id, request.aws_secret_access_key, request.aws_session_token)
         ecs = session.client("ecs", config=BOTO3_CONFIG)
-        
+
         # Get current service info
         svc_response = ecs.describe_services(cluster=request.cluster, services=[request.service])
         if not svc_response["services"]:
@@ -127,10 +143,14 @@ def force_new_deployment(request: ForceNewDeploymentRequest):
         deployment_data = {
             "cluster": request.cluster,
             "service": request.service,
+            "region": request.region,
             "message": "Force new deployment started - ECS will start new tasks with the current task definition",
             "deployment_type": "force_new_deployment",
+            "action_type": "force_new_deployment",
             "service_arn": update_response["service"]["serviceArn"],
-            "deployment_id": f"{request.cluster}-{request.service}-{int(time.time())}"
+            "deployment_id": f"{request.cluster}-{request.service}-{int(time.time())}",
+            "username": user["username"],
+            "email": user["email"],
         }
         
         # Save to deployment history
@@ -183,6 +203,7 @@ def get_service_events(request: ServiceEventsRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Error in get_service_events cluster=%s service=%s", request.cluster, request.service)
         raise HTTPException(status_code=500, detail=f"Failed to get service events: {str(e)}")
 
 

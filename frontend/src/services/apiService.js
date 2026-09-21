@@ -261,6 +261,47 @@ class ApiService {
     return await apiClient.post(`${API_BASE}/service/update_count`, payload).then(res => res.data);
   }
 
+  async getCrossClusterServiceStatus(suffix, clusters, region, env = null) {
+    const payload = { service: suffix, region };
+    if (clusters && clusters.length > 0) payload.clusters = clusters;
+    if (env) payload.env = env;
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/cross_cluster_service_status`, payload).then(res => res.data);
+  }
+
+  async getServiceSuffixes(region) {
+    const payload = { region };
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/service_suffixes`, payload).then(res => res.data);
+  }
+
+  async deployAcrossClusters(serviceName, clusters, region, env = null) {
+    const payload = { service: serviceName, region };
+    if (clusters && clusters.length > 0) payload.clusters = clusters;
+    if (env) payload.env = env;
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/deploy_across_clusters`, payload).then(res => res.data);
+  }
+
+  async getDynatraceLogs(cluster, service, fromTime, toTime, filters, region) {
+    const payload = {
+      cluster,
+      service,
+      from_time: fromTime || null,
+      to_time: toTime || null,
+      limit: 1000,
+      use_container_id: filters.useContainerId,
+      use_hostgroup: filters.useHostgroup,
+      use_image: filters.useImage,
+      container_id: filters.containerId || null,
+      tenant_name: filters.tenantName || null,
+      image_uri: filters.imageUri || null,
+      region,
+    };
+    this.addCredentials(payload);
+    return apiClient.post(`${API_BASE}/dynatrace_logs`, payload);
+  }
+
   async forceNewDeployment(cluster, service, region) {
     const payload = {
       cluster,

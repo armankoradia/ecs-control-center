@@ -3,7 +3,12 @@
     "containerDefinitions": [
         {
             "cpu": 512,
-            "environment": [],
+            "environment": [
+                {
+                    "name": "REACT_APP_API_BASE",
+                    "value": "${FQDN}/api"
+                }
+            ],
             "environmentFiles": [],
             "essential": true,
             "image": "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_PREFIX}-frontend:latest",

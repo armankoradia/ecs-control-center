@@ -1,11 +1,27 @@
 """Refactored main.py - FastAPI application entry point."""
 
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import api_router
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ensure DynamoDB history table exists before serving requests
+    try:
+        from utils.dynamo import ensure_table
+        ensure_table()
+    except Exception as e:
+        logger.warning("DynamoDB table init skipped: %s", e)
+    yield
+
+
 # Create FastAPI app
-app = FastAPI(title="ECS Control Center API", version="1.0.0")
+app = FastAPI(title="ECS Control Center API", version="1.0.0", lifespan=lifespan)
 
 # CORS middleware - MUST be added before routes
 # This handles preflight OPTIONS requests automatically

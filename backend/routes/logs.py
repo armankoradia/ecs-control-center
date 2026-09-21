@@ -4,13 +4,97 @@ from typing import Optional
 import json
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+import requests as http_requests
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from models.schemas import LogTargetRequest, HistoricalLogsRequest
+from models.schemas import LogTargetRequest, HistoricalLogsRequest, DynatraceLogsRequest
 from utils.aws import get_boto3_session
-from config.settings import BOTO3_CONFIG
+from config.settings import (
+    BOTO3_CONFIG,
+    DYNATRACE_ENV_URL,
+    DYNATRACE_API_TOKEN,
+    DYNATRACE_CLIENT_ID,
+    DYNATRACE_SSO_URL,
+    DYNATRACE_ACCOUNT_URN,
+    DYNATRACE_HOSTGROUP_PREFIX,
+    DYNATRACE_TENANT_CLUSTER_PREFIX,
+    DYNATRACE_TENANT_CLUSTER_SUFFIX,
+)
 
 router = APIRouter()
+
+_ENV_KEYWORDS = {"dev", "prod", "staging", "qa", "uat", "test", "sandbox", "preprod"}
+
+
+def _extract_tenant_from_cluster(cluster_name: str) -> str:
+    """Derive a 'tenant' identifier from the cluster name for the Dynatrace
+    Hostgroup filter, stripping a configurable leading prefix and/or
+    trailing suffix segment (DYNATRACE_TENANT_CLUSTER_PREFIX/SUFFIX) if
+    configured and present, e.g. with prefix "myorg" and suffix "cluster",
+    "myorg-acme-cluster" -> "acme". Falls back to the full cluster name if
+    neither is configured, doesn't match, or stripping would leave nothing.
+    """
+    parts = cluster_name.split("-")
+    start = 0
+    end = len(parts)
+    if DYNATRACE_TENANT_CLUSTER_PREFIX and parts[0].lower() == DYNATRACE_TENANT_CLUSTER_PREFIX.lower():
+        start = 1
+    if DYNATRACE_TENANT_CLUSTER_SUFFIX and parts[-1].lower() == DYNATRACE_TENANT_CLUSTER_SUFFIX.lower():
+        end = len(parts) - 1
+    tenant = "-".join(parts[start:end]) if start < end else ""
+    return tenant if tenant else cluster_name
+
+
+_dt_bearer_cache: dict = {"token": None, "expires_at": 0.0}
+
+
+def _get_dt_auth_header() -> str:
+    """Return Authorization header value for Dynatrace Logs API.
+
+    Grail tenants require OAuth Bearer (DYNATRACE_CLIENT_ID set).
+    Classic tenants use Api-Token directly.
+    """
+    import time as _time
+
+    if DYNATRACE_CLIENT_ID:
+        now = _time.time()
+        if _dt_bearer_cache["token"] and now < _dt_bearer_cache["expires_at"] - 30:
+            return f"Bearer {_dt_bearer_cache['token']}"
+
+        from urllib.parse import quote as _quote
+        # Scope colons must NOT be percent-encoded — build body as a raw string.
+        body = (
+            "grant_type=client_credentials"
+            f"&client_id={_quote(DYNATRACE_CLIENT_ID, safe='')}"
+            f"&client_secret={_quote(DYNATRACE_API_TOKEN, safe='')}"
+            "&scope=storage:logs:read storage:buckets:read"
+        )
+        if DYNATRACE_ACCOUNT_URN:
+            body += f"&resource={_quote(DYNATRACE_ACCOUNT_URN, safe='')}"
+
+        try:
+            resp = http_requests.post(
+                DYNATRACE_SSO_URL,
+                data=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=15,
+            )
+        except Exception as sso_err:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Dynatrace SSO unreachable: {sso_err}",
+            )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Dynatrace OAuth token exchange failed ({resp.status_code}): {resp.text[:400]}",
+            )
+        token_data = resp.json()
+        _dt_bearer_cache["token"] = token_data["access_token"]
+        _dt_bearer_cache["expires_at"] = now + token_data.get("expires_in", 3600)
+        return f"Bearer {_dt_bearer_cache['token']}"
+
+    return f"Api-Token {DYNATRACE_API_TOKEN}"
 
 
 def _get_log_target_impl(cluster: str, service: str, profile: Optional[str] = None, region: str = "us-east-1", auth_method: str = "access_key", aws_access_key_id: Optional[str] = None, aws_secret_access_key: Optional[str] = None, aws_session_token: Optional[str] = None):
@@ -19,28 +103,47 @@ def _get_log_target_impl(cluster: str, service: str, profile: Optional[str] = No
         session = get_boto3_session(profile, region, auth_method, aws_access_key_id, aws_secret_access_key, aws_session_token)
         ecs = session.client("ecs", config=BOTO3_CONFIG)
         logs = session.client("logs", config=BOTO3_CONFIG)
-        
+
         services_response = ecs.describe_services(cluster=cluster, services=[service])
         if not services_response.get("services"):
             return {"error": "Service not found"}
-        
+
         tasks_response = ecs.list_tasks(cluster=cluster, serviceName=service)
         if not tasks_response.get("taskArns"):
             return {"error": "No tasks found for this service"}
-        
+
         tasks_details = ecs.describe_tasks(cluster=cluster, tasks=tasks_response["taskArns"][:1])
         if not tasks_details.get("tasks"):
             return {"error": "No task details found"}
-        
+
         task = tasks_details["tasks"][0]
         task_definition_arn = task.get("taskDefinitionArn")
-        
+
         if not task_definition_arn:
             return {"error": "No task definition found for tasks"}
-        
+
         td_response = ecs.describe_task_definition(taskDefinition=task_definition_arn)
         task_definition = td_response.get("taskDefinition", {})
-        
+
+        # Extract container_id (runtimeId) from the running task
+        container_id = None
+        for c in task.get("containers", []):
+            cid = c.get("runtimeId")
+            if cid:
+                container_id = cid
+                break
+
+        # Extract image URI from the task definition (first container)
+        image_uri = None
+        for container_def in task_definition.get("containerDefinitions", []):
+            img = container_def.get("image")
+            if img:
+                image_uri = img
+                break
+
+        # Derive Dynatrace hostgroup tenant from cluster name
+        tenant_name = _extract_tenant_from_cluster(cluster)
+
         log_group = None
         for container in task_definition.get("containerDefinitions", []):
             log_config = container.get("logConfiguration", {})
@@ -48,10 +151,18 @@ def _get_log_target_impl(cluster: str, service: str, profile: Optional[str] = No
                 options = log_config.get("options", {})
                 log_group = options.get("awslogs-group")
                 break
-        
+
+        # DT context is always available once we reach here — include it even
+        # when CloudWatch is not configured so Dynatrace-only mode still works.
+        dt_context = {
+            "container_id": container_id,
+            "image_uri": image_uri,
+            "tenant_name": tenant_name,
+        }
+
         if not log_group:
-            return {"error": "No CloudWatch logs configured for this service"}
-        
+            return {"error": "No CloudWatch logs configured for this service", **dt_context}
+
         try:
             streams_response = logs.describe_log_streams(
                 logGroupName=log_group,
@@ -59,20 +170,21 @@ def _get_log_target_impl(cluster: str, service: str, profile: Optional[str] = No
                 descending=True,
                 limit=1
             )
-            
+
             if not streams_response.get("logStreams"):
-                return {"error": "No log streams found"}
-            
+                return {"error": "No log streams found", **dt_context}
+
             log_stream = streams_response["logStreams"][0]["logStreamName"]
-            
+
             return {
                 "log_group": log_group,
-                "log_stream": log_stream
+                "log_stream": log_stream,
+                **dt_context,
             }
-            
+
         except Exception as e:
-            return {"error": f"Failed to get log stream: {str(e)}"}
-            
+            return {"error": f"Failed to get log stream: {str(e)}", **dt_context}
+
     except Exception as e:
         return {"error": f"Failed to get log target: {str(e)}"}
 
@@ -96,7 +208,7 @@ def get_log_target(cluster: str, service: str, profile: Optional[str] = None, re
 async def websocket_logs(websocket: WebSocket):
     """WebSocket endpoint for streaming CloudWatch logs"""
     await websocket.accept()
-    
+
     try:
         query_params = websocket.query_params
         log_group = query_params.get("log_group")
@@ -108,12 +220,12 @@ async def websocket_logs(websocket: WebSocket):
         aws_secret_access_key = query_params.get("aws_secret_access_key")
         aws_session_token = query_params.get("aws_session_token")
         interval = int(query_params.get("interval", 3))
-        
+
         if not log_group or not log_stream:
             await websocket.send_text(json.dumps({"error": "Missing log_group or log_stream parameter"}))
             await websocket.close()
             return
-        
+
         session = get_boto3_session(
             profile,
             region,
@@ -123,7 +235,7 @@ async def websocket_logs(websocket: WebSocket):
             aws_session_token,
         )
         logs = session.client("logs", config=BOTO3_CONFIG)
-        
+
         try:
             response = logs.get_log_events(
                 logGroupName=log_group,
@@ -131,7 +243,7 @@ async def websocket_logs(websocket: WebSocket):
                 startFromHead=False,
                 limit=50
             )
-            
+
             for event in response.get("events", []):
                 message = event.get("message", "")
                 timestamp = event.get("timestamp", 0)
@@ -139,10 +251,10 @@ async def websocket_logs(websocket: WebSocket):
                     "message": message,
                     "timestamp": timestamp
                 }))
-                
+
         except Exception as e:
             await websocket.send_text(json.dumps({"error": f"Failed to get initial logs: {str(e)}"}))
-        
+
         last_token = None
         while True:
             try:
@@ -154,14 +266,14 @@ async def websocket_logs(websocket: WebSocket):
                 }
                 if last_token is not None:
                     params["nextToken"] = last_token
-                
+
                 response = logs.get_log_events(**params)
-                
+
                 events = response.get("events", [])
-                
+
                 if events:
                     last_token = response.get("nextForwardToken")
-                    
+
                     for event in events:
                         message = event.get("message", "")
                         timestamp = event.get("timestamp", 0)
@@ -169,15 +281,15 @@ async def websocket_logs(websocket: WebSocket):
                             "message": message,
                             "timestamp": timestamp
                         }))
-                
+
                 await asyncio.sleep(interval)
-                
+
             except WebSocketDisconnect:
                 break
             except Exception as e:
                 await websocket.send_text(json.dumps({"error": f"Failed to stream logs: {str(e)}"}))
                 break
-                
+
     except Exception as e:
         await websocket.send_text(json.dumps({"error": f"WebSocket error: {str(e)}"}))
     finally:
@@ -202,21 +314,21 @@ def _get_historical_logs_impl(
         session = get_boto3_session(profile, region, auth_method, aws_access_key_id, aws_secret_access_key, aws_session_token)
         logs = session.client("logs", config=BOTO3_CONFIG)
         ecs = session.client("ecs", config=BOTO3_CONFIG)
-        
+
         try:
             svc_response = ecs.describe_services(cluster=cluster, services=[service])
             if not svc_response["services"]:
                 raise HTTPException(status_code=404, detail="Service not found")
-            
+
             service_info = svc_response["services"][0]
             current_td_arn = service_info.get("taskDefinition")
-            
+
             if not current_td_arn:
                 raise HTTPException(status_code=404, detail="No task definition found for service")
-            
+
             td_response = ecs.describe_task_definition(taskDefinition=current_td_arn)
             task_definition = td_response.get("taskDefinition", {})
-            
+
             log_group = None
             for container in task_definition.get("containerDefinitions", []):
                 log_config = container.get("logConfiguration")
@@ -224,16 +336,16 @@ def _get_historical_logs_impl(
                     log_group = log_config.get("options", {}).get("awslogs-group")
                     if log_group:
                         break
-            
+
             if not log_group:
                 raise HTTPException(status_code=404, detail="No CloudWatch logs configured for this service")
-            
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get service log configuration: {str(e)}")
-        
+
         start_timestamp = None
         end_timestamp = None
-        
+
         try:
             if start_time:
                 if start_time.endswith('Z'):
@@ -245,7 +357,7 @@ def _get_historical_logs_impl(
                 end_timestamp = int(datetime.fromisoformat(end_time).timestamp() * 1000)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid timestamp format: {str(e)}")
-        
+
         if not start_timestamp and not end_timestamp:
             end_timestamp = int(datetime.now().timestamp() * 1000)
             start_timestamp = end_timestamp - (3600 * 1000)
@@ -253,7 +365,7 @@ def _get_historical_logs_impl(
             start_timestamp = end_timestamp - (3600 * 1000)
         elif not end_timestamp:
             end_timestamp = start_timestamp + (3600 * 1000)
-        
+
         # Use the user's limit parameter, but cap at CloudWatch Insights max (10,000)
         # CloudWatch Insights has a maximum of 10,000 results per query
         insights_limit = min(limit, 10000)
@@ -263,7 +375,7 @@ def _get_historical_logs_impl(
         | sort @timestamp desc
         | limit {insights_limit}
         """
-        
+
         try:
             start_query_params = {
                 "logGroupName": log_group,
@@ -271,47 +383,47 @@ def _get_historical_logs_impl(
                 "endTime": end_timestamp,
                 "queryString": query_string
             }
-            
+
             query_response = logs.start_query(**start_query_params)
             query_id = query_response["queryId"]
-            
+
             max_attempts = 30  # Increased timeout for larger queries
             attempt = 0
-            
+
             while attempt < max_attempts:
                 results_response = logs.get_query_results(queryId=query_id)
                 status = results_response["status"]
-                
+
                 if status == "Complete":
                     break
                 elif status == "Failed":
                     raise Exception("CloudWatch Insights query failed")
-                
+
                 time.sleep(1)
                 attempt += 1
-            
+
             if attempt >= max_attempts:
                 raise Exception("CloudWatch Insights query timeout")
-            
+
             # CloudWatch Insights returns all results at once (up to the limit in the query)
             # No pagination needed - the query limit handles it
             results = results_response.get("results", [])
-            
+
             formatted_logs = []
-            
+
             for result in results:
                 timestamp_value = None
                 message_value = None
-                
+
                 for field in result:
                     field_name = field.get("field", "")
                     field_value = field.get("value", "")
-                    
+
                     if field_name == "@timestamp":
                         timestamp_value = field_value
                     elif field_name == "@message":
                         message_value = field_value
-                
+
                 if message_value:
                     timestamp_ms = 0
                     if timestamp_value:
@@ -323,18 +435,18 @@ def _get_historical_logs_impl(
                                 timestamp_ms = int(dt.timestamp() * 1000)
                         except:
                             pass
-                    
+
                     formatted_time = timestamp_value.split('.')[0] if timestamp_value and '.' in timestamp_value else timestamp_value
                     formatted_logs.append({
                         "message": message_value,
                         "timestamp": timestamp_ms,
                         "formatted_time": formatted_time or datetime.fromtimestamp(timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S') if timestamp_ms else ""
                     })
-            
+
             # Apply user's limit if it's less than what we got
             if len(formatted_logs) > limit:
                 formatted_logs = formatted_logs[:limit]
-            
+
             return {
                 "logs": formatted_logs,
                 "total": len(formatted_logs),
@@ -342,7 +454,7 @@ def _get_historical_logs_impl(
                 "query_id": query_id,
                 "method": "cloudwatch_insights"
             }
-            
+
         except Exception as insights_error:
             # Fallback to log streams method
             try:
@@ -350,7 +462,7 @@ def _get_historical_logs_impl(
                 all_streams = []
                 next_token = None
                 max_streams_to_check = 100  # Reasonable limit to prevent excessive API calls
-                
+
                 while len(all_streams) < max_streams_to_check:
                     if next_token:
                         streams_response = logs.describe_log_streams(
@@ -367,40 +479,40 @@ def _get_historical_logs_impl(
                             descending=True,
                             limit=50
                         )
-                    
+
                     streams = streams_response.get("logStreams", [])
-                    
+
                     # Filter streams that have events in our time range
                     for stream in streams:
                         last_event_time = stream.get("lastEventTimestamp", 0)
                         first_event_time = stream.get("firstEventTimestamp", 0)
-                        
+
                         # Stream has events in range if it overlaps with our time range
                         if not (last_event_time < start_timestamp or first_event_time > end_timestamp):
                             all_streams.append(stream)
-                    
+
                     next_token = streams_response.get("nextToken")
                     if not next_token:
                         break
-                
+
                 all_logs = []
-                
+
                 # Process each stream with pagination to get ALL events in time range
                 for stream in all_streams:
                     stream_name = stream["logStreamName"]
                     last_event_time = stream.get("lastEventTimestamp", 0)
                     first_event_time = stream.get("firstEventTimestamp", 0)
-                    
+
                     time_range_span = end_timestamp - start_timestamp
                     mid_point = start_timestamp + (time_range_span / 2)
                     start_from_head = (mid_point - first_event_time) < (last_event_time - mid_point)
-                    
+
                     # Paginate through all events in this stream within the time range
                     stream_next_token = None
                     stream_events_collected = 0
                     max_events_per_stream = 10000  # Reasonable limit per stream
                     events_in_range_found = False
-                    
+
                     while stream_events_collected < max_events_per_stream:
                         try:
                             # Build request parameters
@@ -410,20 +522,20 @@ def _get_historical_logs_impl(
                                 "startFromHead": start_from_head,
                                 "limit": 10000  # Get more events per request
                             }
-                            
+
                             # Add time range if supported
                             try:
                                 request_params["startTime"] = start_timestamp
                                 request_params["endTime"] = end_timestamp
                             except:
                                 pass  # Some AWS SDK versions may not support these
-                            
+
                             # Add pagination token if we have one
                             if stream_next_token:
                                 request_params["nextToken"] = stream_next_token
-                            
+
                             events_response = logs.get_log_events(**request_params)
-                            
+
                         except Exception as e:
                             # If startTime/endTime not supported, try without them
                             try:
@@ -439,39 +551,39 @@ def _get_historical_logs_impl(
                             except Exception as e2:
                                 # Skip this stream if we can't get events
                                 break
-                        
+
                         stream_logs = events_response.get("events", [])
                         if not stream_logs:
                             break
-                        
+
                         filtered_events = []
                         for event in stream_logs:
                             message = event.get("message", "")
                             timestamp = event.get("timestamp", 0)
-                            
+
                             # Filter by time range (in case API didn't filter properly)
                             if timestamp < start_timestamp or timestamp > end_timestamp:
                                 continue
-                            
+
                             events_in_range_found = True
-                            
+
                             if message:
                                 formatted_time = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                                
+
                                 filtered_events.append({
                                     "message": message,
                                     "timestamp": timestamp,
                                     "formatted_time": formatted_time
                                 })
-                        
+
                         all_logs.extend(filtered_events)
                         stream_events_collected += len(stream_logs)
-                        
+
                         # Get next token for pagination
                         stream_next_token = events_response.get("nextForwardToken")
                         if not stream_next_token:
                             break
-                        
+
                         # If we're going backwards and hit events outside our range, we're done
                         # If we're going forwards and hit events outside our range, we're done
                         if events_in_range_found:
@@ -484,19 +596,19 @@ def _get_historical_logs_impl(
                                 # Going backward - if last event is before start_time, we're done
                                 if stream_logs and stream_logs[-1].get("timestamp", 0) < start_timestamp:
                                     break
-                        
+
                         # Stop if we've collected enough logs (respecting user's limit)
                         if len(all_logs) >= limit * 2:  # Collect a bit more for sorting, then trim
                             break
-                    
+
                     # Stop processing more streams if we have enough logs
                     if len(all_logs) >= limit * 2:
                         break
-                
+
                 # Sort by timestamp descending and apply user's limit
                 all_logs.sort(key=lambda x: x["timestamp"], reverse=True)
                 all_logs = all_logs[:limit]
-                
+
                 return {
                     "logs": all_logs,
                     "total": len(all_logs),
@@ -504,10 +616,10 @@ def _get_historical_logs_impl(
                     "method": "log_streams",
                     "streams_checked": len(all_streams)
                 }
-                
+
             except Exception as stream_error:
                 raise HTTPException(status_code=500, detail=f"Both CloudWatch Insights and log streams failed: {str(stream_error)}")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -543,3 +655,117 @@ def get_historical_logs(
         cluster, service, start_time, end_time, limit, profile, region, auth_method,
         aws_access_key_id, aws_secret_access_key, aws_session_token
     )
+
+
+@router.post("/dynatrace_logs")
+def get_dynatrace_logs(request: DynatraceLogsRequest):
+    """Fetch logs from the Dynatrace Logs API v2 using per-container filters."""
+    if not DYNATRACE_ENV_URL or not DYNATRACE_API_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Dynatrace not configured. Required: DYNATRACE_ENV_URL + DYNATRACE_API_TOKEN. "
+                "For Grail/OAuth tenants also set DYNATRACE_CLIENT_ID."
+            ),
+        )
+
+    # Build DQL filter — matchesValue() is the correct syntax for the Grail DQL API
+    dql_filters = []
+    if request.use_container_id and request.container_id:
+        dql_filters.append(f'matchesValue(container.id, "{request.container_id}")')
+    if request.use_hostgroup and request.tenant_name:
+        hostgroup_value = f"{DYNATRACE_HOSTGROUP_PREFIX}{request.tenant_name.upper()}"
+        dql_filters.append(f'matchesValue(dt.host_group.id, "{hostgroup_value}")')
+    if request.use_image and request.image_uri:
+        image_for_filter = request.image_uri.split("@sha256:")[0]
+        dql_filters.append(f'matchesValue(container.image.name, "{image_for_filter}*")')
+
+    limit = min(request.limit, 1000)
+
+    now = datetime.utcnow()
+    from_time = request.from_time or (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    to_time   = request.to_time   or now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Grail Platform API lives on apps.dynatrace.com, not live.dynatrace.com
+    grail_base = DYNATRACE_ENV_URL.rstrip('/').replace('.live.dynatrace.com', '.apps.dynatrace.com')
+    url = f"{grail_base}/platform/storage/query/v1/query:execute"
+
+    def _run_dql(filters: list, auth_header: str) -> tuple:
+        """Execute a DQL query and return (records, query_string)."""
+        clause = " AND ".join(filters) if filters else "true"
+        q = f"fetch logs | filter {clause} | sort timestamp desc | limit {limit}"
+        body = {
+            "query": q,
+            "defaultTimeframeStart": from_time,
+            "defaultTimeframeEnd": to_time,
+            "requestTimeoutMilliseconds": 25000,
+        }
+        r = http_requests.post(
+            url,
+            json=body,
+            headers={"Authorization": auth_header, "Content-Type": "application/json", "Accept": "application/json"},
+            timeout=30,
+        )
+        if r.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"Dynatrace API error {r.status_code}: {r.text[:500]}",
+            )
+        d = r.json()
+        state = d.get("state", "")
+        if state and state != "SUCCEEDED":
+            raise HTTPException(status_code=503, detail=f"Dynatrace DQL query did not complete: state={state}")
+        return d.get("result", {}).get("records", []), q
+
+    try:
+        auth_header = _get_dt_auth_header()
+
+        # Attempt 1: all enabled filters
+        records, dql_query = _run_dql(dql_filters, auth_header)
+
+        # Attempt 2: if no results and container.id was the first filter, drop it.
+        # container.id changes on every deployment so it often misses historical logs.
+        fallback_used = False
+        if not records and dql_filters and dql_filters[0].startswith("matchesValue(container.id"):
+            fallback_filters = dql_filters[1:]  # drop container.id, keep hostgroup + image
+            records, dql_query = _run_dql(fallback_filters, auth_header)
+            fallback_used = bool(records)
+
+        formatted_logs = []
+        for record in records:
+            ts_raw = record.get("timestamp", "")
+            content = record.get("content", "") or record.get("log.content", "")
+            ts_ms = 0
+            formatted_time = ""
+            if ts_raw:
+                try:
+                    if isinstance(ts_raw, (int, float)):
+                        ts_ms = int(ts_raw)
+                    else:
+                        dt_val = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+                        ts_ms = int(dt_val.timestamp() * 1000)
+                    formatted_time = datetime.utcfromtimestamp(ts_ms / 1000).strftime("%Y-%m-%dT%H:%M:%S")
+                except Exception:
+                    pass
+            if content:
+                formatted_logs.append({
+                    "message": content,
+                    "timestamp": ts_ms,
+                    "formatted_time": formatted_time,
+                })
+
+        return {
+            "logs": formatted_logs,
+            "total": len(formatted_logs),
+            "raw_count": len(records),
+            "method": "dynatrace_dql",
+            "query": dql_query,
+            "from_time": from_time,
+            "to_time": to_time,
+            "fallback_used": fallback_used,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dynatrace request failed: {str(e)}")

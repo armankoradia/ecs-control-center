@@ -7,8 +7,19 @@ services:
     environment:
       - AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
       - AWS_CONFIG_FILE=/root/.aws/config
-      - OKTA_ISSUER=${OKTA_ISSUER}
-      - OKTA_CLIENT_ID=${OKTA_CLIENT_ID}
+      # Dynatrace log integration (optional locally - logs queries just
+      # return "not configured" if left blank)
+      - DYNATRACE_ENV_URL=${DYNATRACE_ENV_URL}
+      - DYNATRACE_SSO_URL=${DYNATRACE_SSO_URL:-https://sso.dynatrace.com/sso/oauth2/token}
+      - DYNATRACE_CLIENT_ID=${DYNATRACE_CLIENT_ID}
+      - DYNATRACE_API_TOKEN=${DYNATRACE_API_TOKEN}
+      - DYNATRACE_ACCOUNT_URN=${DYNATRACE_ACCOUNT_URN}
+      - DYNATRACE_HOSTGROUP_PREFIX=${DYNATRACE_HOSTGROUP_PREFIX}
+      - DYNATRACE_TENANT_CLUSTER_PREFIX=${DYNATRACE_TENANT_CLUSTER_PREFIX}
+      - DYNATRACE_TENANT_CLUSTER_SUFFIX=${DYNATRACE_TENANT_CLUSTER_SUFFIX}
+      # DynamoDB-backed deployment history
+      - HISTORY_TABLE_NAME=${HISTORY_TABLE_NAME:-ecs-control-center-history}
+      - HISTORY_AWS_REGION=${HISTORY_AWS_REGION:-us-east-1}
     volumes:
       - ~/.aws:/root/.aws:ro
     user: "0:0"  # Run as root to access mounted files
@@ -16,14 +27,14 @@ services:
       - app-network
 
   frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - REACT_APP_OKTA_ISSUER=${REACT_APP_OKTA_ISSUER}
-        - REACT_APP_OKTA_CLIENT_ID=${REACT_APP_OKTA_CLIENT_ID}
-        - REACT_APP_OKTA_REDIRECT_URI=${REACT_APP_OKTA_REDIRECT_URI}
-        - REACT_APP_API_BASE=${REACT_APP_API_BASE:-http://localhost:8000}
+    # Not a build arg - the image reads it from the environment at container
+    # startup (react-scripts start compiles then, not at `docker build`
+    # time), so the same image works in any environment without a rebuild.
+    environment:
+      - REACT_APP_API_BASE=${REACT_APP_API_BASE:-http://localhost:8000}
     container_name: ecs-control-center-frontend
     ports:
       - "3000:3000"

@@ -12,17 +12,11 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build arguments for environment variables
-ARG REACT_APP_OKTA_ISSUER
-ARG REACT_APP_OKTA_CLIENT_ID
-ARG REACT_APP_OKTA_REDIRECT_URI
-ARG REACT_APP_API_BASE
-
-# Set environment variables
-ENV REACT_APP_OKTA_ISSUER=$REACT_APP_OKTA_ISSUER
-ENV REACT_APP_OKTA_CLIENT_ID=$REACT_APP_OKTA_CLIENT_ID
-ENV REACT_APP_OKTA_REDIRECT_URI=$REACT_APP_OKTA_REDIRECT_URI
-ENV REACT_APP_API_BASE=$REACT_APP_API_BASE
+# No REACT_APP_* values are baked in at build time. This image runs `npm
+# start` at container startup, so react-scripts reads REACT_APP_* from the
+# environment at that point — they're injected at container runtime (ECS
+# task definition environment, or docker-compose environment section), so
+# the same image runs unmodified across environments.
 ENV HOST=0.0.0.0
 ENV PORT=3000
 

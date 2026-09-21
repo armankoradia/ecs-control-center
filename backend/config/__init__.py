@@ -1,4 +1,4 @@
-"""Configuration module for ECS DeployMate backend."""
+"""Configuration module for ECS Control Center backend."""
 
 from .settings import BOTO3_CONFIG
 

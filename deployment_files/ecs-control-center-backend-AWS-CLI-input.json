@@ -3,6 +3,44 @@
     "containerDefinitions": [
         {
             "cpu": 1024,
+            "environment": [
+                {
+                    "name": "HISTORY_TABLE_NAME",
+                    "value": "${HISTORY_TABLE_NAME}"
+                },
+                {
+                    "name": "HISTORY_AWS_REGION",
+                    "value": "${HISTORY_AWS_REGION}"
+                },
+                {
+                    "name": "DYNATRACE_ENV_URL",
+                    "value": "${DYNATRACE_ENV_URL}"
+                },
+                {
+                    "name": "DYNATRACE_API_TOKEN",
+                    "value": "${DYNATRACE_API_TOKEN}"
+                },
+                {
+                    "name": "DYNATRACE_CLIENT_ID",
+                    "value": "${DYNATRACE_CLIENT_ID}"
+                },
+                {
+                    "name": "DYNATRACE_ACCOUNT_URN",
+                    "value": "${DYNATRACE_ACCOUNT_URN}"
+                },
+                {
+                    "name": "DYNATRACE_HOSTGROUP_PREFIX",
+                    "value": "${DYNATRACE_HOSTGROUP_PREFIX}"
+                },
+                {
+                    "name": "DYNATRACE_TENANT_CLUSTER_PREFIX",
+                    "value": "${DYNATRACE_TENANT_CLUSTER_PREFIX}"
+                },
+                {
+                    "name": "DYNATRACE_TENANT_CLUSTER_SUFFIX",
+                    "value": "${DYNATRACE_TENANT_CLUSTER_SUFFIX}"
+                }
+            ],
             "environmentFiles": [],
             "essential": true,
             "image": "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_PREFIX}-backend:latest",

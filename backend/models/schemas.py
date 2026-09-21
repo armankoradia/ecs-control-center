@@ -146,3 +146,25 @@ class ServiceEventsRequest(BaseAWSRequest):
     cluster: str
     service: str
 
+
+class CrossClusterDeployRequest(BaseAWSRequest):
+    """Request model for deploying a service across multiple clusters."""
+    service: str
+    clusters: Optional[List[str]] = None  # If None, deploys to all clusters in region
+    env: Optional[str] = None             # e.g. "dev" or "prod"; if None matches all envs
+
+
+class DynatraceLogsRequest(BaseModel):
+    """Request model for fetching logs from Dynatrace Logs API v2."""
+    cluster: str
+    service: str
+    container_id: Optional[str] = None
+    tenant_name: Optional[str] = None
+    image_uri: Optional[str] = None
+    from_time: Optional[str] = None   # ISO 8601 or relative (e.g. "now-1h")
+    to_time: Optional[str] = None     # ISO 8601 or "now"
+    limit: int = 1000
+    use_container_id: bool = True
+    use_hostgroup: bool = True
+    use_image: bool = True
+

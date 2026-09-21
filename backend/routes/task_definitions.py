@@ -1,9 +1,10 @@
 """Task definition-related routes."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from models.schemas import TaskDefinitionRequest, TaskDefinitionUpdate
 from utils.aws import get_boto3_session
+from utils.auth import get_user_from_request
 from services.deployment_history import save_deployment_history
 from config.settings import BOTO3_CONFIG
 import time
@@ -85,9 +86,10 @@ def get_task_definition(cluster: str, service: str, profile: Optional[str] = Non
 
 
 @router.post("/task_definition/update")
-def update_task_definition(data: TaskDefinitionUpdate):
+def update_task_definition(data: TaskDefinitionUpdate, request: Request):
     """Update task definition with new settings and deploy"""
     try:
+        user = get_user_from_request(request)
         session = get_boto3_session(data.profile, data.region, data.auth_method, data.aws_access_key_id, data.aws_secret_access_key, data.aws_session_token)
         ecs = session.client("ecs", config=BOTO3_CONFIG)
         
@@ -204,16 +206,20 @@ def update_task_definition(data: TaskDefinitionUpdate):
         deployment_data = {
             "cluster": data.cluster,
             "service": data.service,
+            "region": data.region,
             "message": "Task definition updated successfully",
             "deployment_type": "task_definition_update",
+            "action_type": "task_definition_update",
             "new_task_definition": new_td_arn,
             "service_arn": update_response["service"]["serviceArn"],
             "deployment_id": f"td-update-{data.cluster}-{data.service}-{int(time.time())}",
-            "changes": {
+            "username": user["username"],
+            "email": user["email"],
+            "details": {
                 "cpu": data.cpu,
                 "memory": data.memory,
-                "container_updates": [cu.dict() for cu in data.container_updates]
-            }
+                "container_updates": [cu.dict() for cu in data.container_updates],
+            },
         }
         
         save_deployment_history(deployment_data)

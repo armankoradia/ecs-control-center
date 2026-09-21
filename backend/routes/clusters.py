@@ -1,11 +1,16 @@
 """Cluster-related routes."""
 
-from typing import Optional
+from typing import Optional, Set, List, Tuple
 from fastapi import APIRouter, HTTPException
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from models.schemas import ClustersRequest, ClusterOverviewRequest
 from utils.aws import get_boto3_session
 from utils.ecr import extract_ecr_info, unified_image_comparison
 from config.settings import BOTO3_CONFIG
+
+# Known environment segment values used to split the service name prefix from the suffix.
+# Pattern: smartapps-{tenant}-{env}-{suffix}
+_ENV_KEYWORDS: Set[str] = {"dev", "prod", "staging", "qa", "uat", "test", "sandbox", "preprod"}
 
 router = APIRouter()
 
@@ -274,4 +279,98 @@ def get_cluster_overview(
 ):
     """Get cluster overview (GET version for backward compatibility)"""
     return _get_cluster_overview_impl(cluster, profile, region, auth_method, aws_access_key_id, aws_secret_access_key, aws_session_token)
+
+
+def _extract_service_suffix(service_name: str) -> Optional[str]:
+    """
+    Extract the app-level suffix from a prefixed ECS service name.
+
+    Expected naming pattern: smartapps-{tenant}-{env}-{suffix}
+    where {env} is a known environment keyword (dev, prod, staging, …).
+
+    Strategy: find the LAST occurrence of a known env keyword in the
+    dash-split parts; everything after it is the suffix.
+    This handles tenants whose names contain env-like words correctly
+    (e.g. smartapps-prod-client-prod-ludicloud-api → suffix = ludicloud-api).
+    """
+    parts = service_name.split("-")
+    last_env_idx = -1
+    for i, part in enumerate(parts):
+        if part.lower() in _ENV_KEYWORDS:
+            last_env_idx = i
+    if last_env_idx >= 0 and last_env_idx < len(parts) - 1:
+        return "-".join(parts[last_env_idx + 1:])
+    return None
+
+
+@router.post("/service_suffixes")
+def get_service_suffixes(request: ClustersRequest):
+    """
+    Discover unique service suffixes across all clusters in the region.
+
+    Scans every cluster's service list in parallel and extracts the app-level suffix
+    (the part after the env segment in names like smartapps-{tenant}-{env}-{suffix}).
+    Returns a deduplicated, sorted list plus a list of any clusters that could not
+    be scanned (e.g. permission errors).
+    """
+    try:
+        credentials = dict(
+            profile=request.profile,
+            region=request.region,
+            auth_method=request.auth_method,
+            aws_access_key_id=request.aws_access_key_id,
+            aws_secret_access_key=request.aws_secret_access_key,
+            aws_session_token=request.aws_session_token,
+        )
+
+        # List all clusters first (fast, single paginated call)
+        session = get_boto3_session(**credentials)
+        ecs = session.client("ecs", config=BOTO3_CONFIG)
+
+        cluster_arns: List[str] = []
+        for page in ecs.get_paginator("list_clusters").paginate():
+            cluster_arns.extend(page["clusterArns"])
+
+        cluster_names = [arn.split("/")[-1] for arn in cluster_arns]
+
+        # Scan each cluster's services in parallel
+        def _scan_cluster(cluster_name: str) -> Tuple[Set[str], Optional[str]]:
+            """Returns (suffixes_found, error_message_or_None)."""
+            found: Set[str] = set()
+            try:
+                # Each thread gets its own session/client (boto3 thread safety)
+                _session = get_boto3_session(**credentials)
+                _ecs = _session.client("ecs", config=BOTO3_CONFIG)
+                for page in _ecs.get_paginator("list_services").paginate(
+                    cluster=cluster_name, maxResults=100
+                ):
+                    for svc_arn in page["serviceArns"]:
+                        suffix = _extract_service_suffix(svc_arn.split("/")[-1])
+                        if suffix:
+                            found.add(suffix)
+                return found, None
+            except Exception as exc:
+                return found, str(exc)
+
+        all_suffixes: Set[str] = set()
+        skipped_clusters: List[dict] = []
+
+        max_workers = min(len(cluster_names), 15)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_scan_cluster, c): c for c in cluster_names}
+            for future in as_completed(futures):
+                cluster_name = futures[future]
+                found, error = future.result()
+                all_suffixes.update(found)
+                if error:
+                    skipped_clusters.append({"cluster": cluster_name, "reason": error})
+
+        return {
+            "suffixes": sorted(all_suffixes),
+            "scanned": len(cluster_names),
+            "skipped": skipped_clusters,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to discover service suffixes: {str(e)}")
 

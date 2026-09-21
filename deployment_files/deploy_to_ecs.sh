@@ -41,6 +41,22 @@ CLUSTER_NAME=${CLUSTER_NAME:-$REPO_PREFIX-cluster}
 read -p "Enter Fully Qualified Domain Name (FQDN) for frontend (e.g., example.com): " FQDN
 FQDN=${FQDN:-https://ecs-control-center.example.com}
 
+read -p "Enter DynamoDB table name for deployment history [ecs-control-center-history]: " HISTORY_TABLE_NAME
+HISTORY_TABLE_NAME=${HISTORY_TABLE_NAME:-ecs-control-center-history}
+
+read -p "Enter AWS region for the deployment history DynamoDB table [$REGION]: " HISTORY_AWS_REGION
+HISTORY_AWS_REGION=${HISTORY_AWS_REGION:-$REGION}
+
+echo ""
+echo "Dynatrace log integration is optional — leave any of these blank to disable it."
+read -p "Enter Dynatrace environment URL (e.g. https://<env-id>.live.dynatrace.com), or leave blank: " DYNATRACE_ENV_URL
+read -p "Enter Dynatrace API token (or OAuth client secret for Grail tenants), or leave blank: " DYNATRACE_API_TOKEN
+read -p "Enter Dynatrace OAuth client ID (Grail tenants only), or leave blank: " DYNATRACE_CLIENT_ID
+read -p "Enter Dynatrace account URN (urn:dtaccount:<uuid>, some Platform tenants only), or leave blank: " DYNATRACE_ACCOUNT_URN
+read -p "Enter a prefix for matching Dynatrace host-groups by tenant name (optional, leave blank to match on tenant name alone): " DYNATRACE_HOSTGROUP_PREFIX
+read -p "Enter a leading segment to strip from your ECS cluster name when deriving the Dynatrace tenant (optional, e.g. an org prefix), or leave blank: " DYNATRACE_TENANT_CLUSTER_PREFIX
+read -p "Enter a trailing segment to strip from your ECS cluster name when deriving the Dynatrace tenant (optional, e.g. 'cluster'), or leave blank: " DYNATRACE_TENANT_CLUSTER_SUFFIX
+
 echo "🚀 Deploying ECS ControlCenter to ECS with below configuration..."
 echo "Region: $REGION"
 echo "Account ID: $ACCOUNT_ID"
@@ -65,9 +81,13 @@ docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_PREFIX-backend:lates
 cd ..
 
 # 4. Build and push frontend image
+# No build args - the image reads REACT_APP_* from the environment at
+# container startup (it runs `npm start`, not a static build), so the same
+# image works in any environment without a rebuild. REACT_APP_API_BASE is
+# set below on the frontend task definition instead.
 echo "🏗️ Building and pushing frontend image..."
 cd frontend
-docker build --platform linux/amd64 --build-arg REACT_APP_API_BASE="$FQDN/api" -t $REPO_PREFIX-frontend .
+docker build --platform linux/amd64 -t $REPO_PREFIX-frontend .
 docker tag $REPO_PREFIX-frontend:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_PREFIX-frontend:latest
 docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_PREFIX-frontend:latest
 cd ..

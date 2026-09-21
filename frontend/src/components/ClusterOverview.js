@@ -88,11 +88,10 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
 
   const handleBulkDeploy = useCallback(async () => {
     if (!overview || !overview.services) return;
-    
+
     const servicesToDeploy = overview.services.filter(s => s.status === "UPDATES_AVAILABLE");
     if (servicesToDeploy.length === 0) return;
-    
-    // Initialize bulk deploy status
+
     setBulkDeployStatus({
       isActive: true,
       total: servicesToDeploy.length,
@@ -100,109 +99,34 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
       failed: 0,
       current: '',
       results: [],
-      operationType: 'deploy'
+      operationType: 'deploy',
     });
     setBulkDeploying(true);
-    
-    const results = [];
-    
-    // Deploy services sequentially to avoid overwhelming the system
-    for (let i = 0; i < servicesToDeploy.length; i++) {
-      const service = servicesToDeploy[i];
-      
-      // Update current service being deployed
-      setBulkDeployStatus(prev => ({
-        ...prev,
-        current: service.service_name
-      }));
-      
-      try {
-        const result = await apiService.deploy(cluster, service.service_name, null, region);
-        
-        if (result && !result.error) {
-          results.push({
-            service: service.service_name,
-            status: 'success',
-            message: result.message || 'Deployment started successfully'
-          });
-          
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            completed: prev.completed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'success',
-              message: result.message || 'Deployment started successfully'
-            }]
-          }));
-        } else {
-          const errorMessage = getErrorMessage(result?.error) || 'Deployment failed';
-          
-          results.push({
-            service: service.service_name,
-            status: 'error',
-            message: errorMessage
-          });
-          
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            failed: prev.failed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'error',
-              message: errorMessage
-            }]
-          }));
-        }
-      } catch (err) {
-        const errorMessage = getErrorMessage(err?.response?.data?.detail || err?.response?.data?.error || err.message) || 'Deployment failed';
-        results.push({
-          service: service.service_name,
-          status: 'error',
-          message: errorMessage
-        });
-        
-        setBulkDeployStatus(prev => ({
-          ...prev,
-          failed: prev.failed + 1,
-          results: [...prev.results, {
-            service: service.service_name,
-            status: 'error',
-            message: errorMessage
-          }]
-        }));
-      }
-      
-      // Small delay between deployments
-      if (i < servicesToDeploy.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // Final status update
-    setBulkDeployStatus(prev => ({
-      ...prev,
-      isActive: false,
-      current: ''
-    }));
+
+    const settled = await Promise.allSettled(
+      servicesToDeploy.map(service =>
+        apiService.deploy(cluster, service.service_name, null, region)
+          .then(result => ({ service: service.service_name, status: 'success', message: result.message || 'Deployment started' }))
+          .catch(err => ({ service: service.service_name, status: 'error', message: err?.response?.data?.detail || err.message }))
+      )
+    );
+
+    const results = settled.map(s => s.value || s.reason);
+    const succeeded = results.filter(r => r.status === 'success').length;
+    const failed = results.filter(r => r.status === 'error').length;
+
+    setBulkDeployStatus({ isActive: false, total: servicesToDeploy.length, completed: succeeded, failed, current: '', results, operationType: 'deploy' });
     setBulkDeploying(false);
-    
-    // Refresh overview after all deployments
-    setTimeout(() => {
-      fetchOverview(true);
-    }, 3000);
+    setTimeout(() => fetchOverview(true), 3000);
   }, [overview, cluster, region, fetchOverview]);
 
 
   const handleBulkRestart = useCallback(async () => {
     if (!overview || !overview.services) return;
-    
-    const servicesToRestart = overview.services.filter(s => 
-      s.status === "UPDATES_AVAILABLE" && s.uses_latest_tag
-    );
+
+    const servicesToRestart = overview.services.filter(s => s.status === "UPDATES_AVAILABLE" && s.uses_latest_tag);
     if (servicesToRestart.length === 0) return;
-    
-    // Initialize bulk restart status
+
     setBulkDeployStatus({
       isActive: true,
       total: servicesToRestart.length,
@@ -210,87 +134,33 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
       failed: 0,
       current: '',
       results: [],
-      operationType: 'restart'
+      operationType: 'restart',
     });
     setBulkDeploying(true);
-    
-    // Restart services sequentially to avoid overwhelming the system
-    for (let i = 0; i < servicesToRestart.length; i++) {
-      const service = servicesToRestart[i];
-      
-      // Update current service being restarted
-      setBulkDeployStatus(prev => ({
-        ...prev,
-        current: service.service_name
-      }));
-      
-      try {
-        const result = await apiService.deploy(cluster, service.service_name, null, region);
-        
-        if (result && !result.error) {
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            completed: prev.completed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'success',
-              message: result.message || 'Restart started successfully'
-            }]
-          }));
-        } else {
-          const errorMessage = getErrorMessage(result?.error) || 'Restart failed';
-          
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            failed: prev.failed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'error',
-              message: errorMessage
-            }]
-          }));
-        }
-      } catch (err) {
-        const errorMessage = getErrorMessage(err?.response?.data?.detail || err?.response?.data?.error || err.message) || 'Restart failed';
-        setBulkDeployStatus(prev => ({
-          ...prev,
-          failed: prev.failed + 1,
-          results: [...prev.results, {
-            service: service.service_name,
-            status: 'error',
-            message: errorMessage
-          }]
-        }));
-      }
-      
-      // Small delay between restarts
-      if (i < servicesToRestart.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // Final status update
-    setBulkDeployStatus(prev => ({
-      ...prev,
-      isActive: false,
-      current: ''
-    }));
+
+    const settled = await Promise.allSettled(
+      servicesToRestart.map(service =>
+        apiService.deploy(cluster, service.service_name, null, region)
+          .then(result => ({ service: service.service_name, status: 'success', message: result.message || 'Restart started' }))
+          .catch(err => ({ service: service.service_name, status: 'error', message: err?.response?.data?.detail || err.message }))
+      )
+    );
+
+    const results = settled.map(s => s.value || s.reason);
+    const succeeded = results.filter(r => r.status === 'success').length;
+    const failed = results.filter(r => r.status === 'error').length;
+
+    setBulkDeployStatus({ isActive: false, total: servicesToRestart.length, completed: succeeded, failed, current: '', results, operationType: 'restart' });
     setBulkDeploying(false);
-    
-    // Refresh overview after all restarts
-    setTimeout(() => {
-      fetchOverview(true);
-    }, 3000);
+    setTimeout(() => fetchOverview(true), 3000);
   }, [overview, cluster, region, fetchOverview]);
 
   const handleForceRestartAll = useCallback(async () => {
     if (!overview || !overview.services) return;
-    
-    // Get all services - no filtering by status
+
     const allServices = overview.services;
     if (allServices.length === 0) return;
-    
-    // Initialize bulk deploy status
+
     setBulkDeployStatus({
       isActive: true,
       total: allServices.length,
@@ -298,99 +168,27 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
       failed: 0,
       current: '',
       results: [],
-      operationType: 'forceRestart'
+      operationType: 'forceRestart',
     });
     setForceRestarting(true);
     setShowForceRestartModal(false);
     setForceRestartInput("");
-    
-    const results = [];
-    
-    // Deploy services sequentially to force new deployment
-    for (let i = 0; i < allServices.length; i++) {
-      const service = allServices[i];
-      
-      // Update current service being restarted
-      setBulkDeployStatus(prev => ({
-        ...prev,
-        current: service.service_name
-      }));
-      
-      try {
-        const result = await apiService.deploy(cluster, service.service_name, null, region);
-        
-        if (result && !result.error) {
-          results.push({
-            service: service.service_name,
-            status: 'success',
-            message: result.message || 'Force restart initiated successfully'
-          });
-          
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            completed: prev.completed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'success',
-              message: result.message || 'Force restart initiated successfully'
-            }]
-          }));
-        } else {
-          const errorMessage = getErrorMessage(result?.error) || 'Force restart failed';
-          
-          results.push({
-            service: service.service_name,
-            status: 'error',
-            message: errorMessage
-          });
-          
-          setBulkDeployStatus(prev => ({
-            ...prev,
-            failed: prev.failed + 1,
-            results: [...prev.results, {
-              service: service.service_name,
-              status: 'error',
-              message: errorMessage
-            }]
-          }));
-        }
-      } catch (err) {
-        const errorMessage = getErrorMessage(err?.response?.data?.detail || err?.response?.data?.error || err.message) || 'Force restart failed';
-        results.push({
-          service: service.service_name,
-          status: 'error',
-          message: errorMessage
-        });
-        
-        setBulkDeployStatus(prev => ({
-          ...prev,
-          failed: prev.failed + 1,
-          results: [...prev.results, {
-            service: service.service_name,
-            status: 'error',
-            message: errorMessage
-          }]
-        }));
-      }
-      
-      // Small delay between restarts
-      if (i < allServices.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // Final status update
-    setBulkDeployStatus(prev => ({
-      ...prev,
-      isActive: false,
-      current: ''
-    }));
+
+    const settled = await Promise.allSettled(
+      allServices.map(service =>
+        apiService.deploy(cluster, service.service_name, null, region)
+          .then(result => ({ service: service.service_name, status: 'success', message: result.message || 'Force restart initiated' }))
+          .catch(err => ({ service: service.service_name, status: 'error', message: err?.response?.data?.detail || err.message }))
+      )
+    );
+
+    const results = settled.map(s => s.value || s.reason);
+    const succeeded = results.filter(r => r.status === 'success').length;
+    const failed = results.filter(r => r.status === 'error').length;
+
+    setBulkDeployStatus({ isActive: false, total: allServices.length, completed: succeeded, failed, current: '', results, operationType: 'forceRestart' });
     setForceRestarting(false);
-    
-    // Refresh overview after all restarts
-    setTimeout(() => {
-      fetchOverview(true);
-    }, 3000);
+    setTimeout(() => fetchOverview(true), 3000);
   }, [overview, cluster, region, fetchOverview]);
 
   const getStatusColor = (status) => {
@@ -907,7 +705,7 @@ function ClusterOverview({ cluster, region, onServiceSelect }) {
             </div>
             
             <p className="text-sm text-secondary-700 mb-4">
-              This will trigger a "Force New Deployment" for <span className="font-semibold">{summary.total} service{summary.total !== 1 ? 's' : ''}</span> in the cluster <span className="font-semibold">{cluster}</span>. This action cannot be undone from ECS DeployMate.
+              This will trigger a "Force New Deployment" for <span className="font-semibold">{summary.total} service{summary.total !== 1 ? 's' : ''}</span> in the cluster <span className="font-semibold">{cluster}</span>. This action cannot be undone from ECS Control Center.
             </p>
             
             <div className="bg-warning-50 border border-warning-200 rounded-lg p-3 mb-4">

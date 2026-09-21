@@ -14,10 +14,12 @@ import MetricsCards from "./components/MetricsCards";
 import ClusterOverview from "./components/ClusterOverview";
 import DeploymentHistory from "./components/DeploymentHistory";
 import AccessKeySelector from "./components/AccessKeySelector";
+import CrossClusterDeploy from "./components/CrossClusterDeploy";
 
 function AppContent() {
   const { user } = useAuth();
   const [region, setRegion] = useState(() => localStorage.getItem('ecs-region') || "us-east-1");
+  const [viewMode, setViewMode] = useState("cluster"); // "cluster" | "global" | "history"
   const [clusters, setClusters] = useState([]);
   const [selectedCluster, setSelectedCluster] = useState(() => localStorage.getItem('ecs-cluster') || "");
   const [services, setServices] = useState([]);
@@ -155,7 +157,56 @@ function AppContent() {
             <div>
               <RegionSelector region={region} setRegion={setRegion} />
             </div>
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
+              {/* Cluster view */}
+              <button
+                onClick={() => setViewMode("cluster")}
+                className={`w-full text-sm py-2.5 rounded-lg font-medium border transition-colors ${
+                  viewMode === "cluster"
+                    ? "bg-primary-600 text-white border-primary-600 hover:bg-primary-700"
+                    : "bg-white text-primary-600 border-primary-300 hover:bg-primary-50"
+                }`}
+              >
+                <span className="flex items-center justify-center">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+                  </svg>
+                  Clusters
+                </span>
+              </button>
+              {/* Global Deploy */}
+              <button
+                onClick={() => setViewMode("global")}
+                className={`w-full text-sm py-2.5 rounded-lg font-medium border transition-colors ${
+                  viewMode === "global"
+                    ? "bg-primary-600 text-white border-primary-600 hover:bg-primary-700"
+                    : "bg-white text-primary-600 border-primary-300 hover:bg-primary-50"
+                }`}
+              >
+                <span className="flex items-center justify-center">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                  </svg>
+                  Global Deploy
+                </span>
+              </button>
+              {/* History */}
+              <button
+                onClick={() => setViewMode("history")}
+                className={`w-full text-sm py-2.5 rounded-lg font-medium border transition-colors ${
+                  viewMode === "history"
+                    ? "bg-primary-600 text-white border-primary-600 hover:bg-primary-700"
+                    : "bg-white text-primary-600 border-primary-300 hover:bg-primary-50"
+                }`}
+              >
+                <span className="flex items-center justify-center">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  History
+                </span>
+              </button>
               <button
                 onClick={refreshAll}
                 disabled={isLoading}
@@ -228,6 +279,16 @@ function AppContent() {
 
           <main className="flex-1 overflow-y-auto scrollbar-thin bg-secondary-50 p-6">
             <div className="space-y-6 animate-fade-in">
+
+              {viewMode === "history" ? (
+                <DeploymentHistory globalMode={true} region={region} />
+              ) : viewMode === "global" ? (
+                <CrossClusterDeploy
+                  clusters={clusters}
+                  region={region}
+                />
+              ) : (
+              <>
               <MetricsCards cluster={selectedCluster} service={selectedService} region={region} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -309,6 +370,8 @@ function AppContent() {
                   </div>
                   <ServiceEvents cluster={selectedCluster} service={selectedService} region={region} />
                 </>
+              )}
+              </>
               )}
             </div>
           </main>
